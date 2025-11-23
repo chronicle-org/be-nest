@@ -3,7 +3,6 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
-  ForeignKey,
   OneToMany,
   ManyToOne,
   JoinColumn,
@@ -16,7 +15,6 @@ export class Post {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ForeignKey(() => User)
   @Column()
   user_id: number;
 
