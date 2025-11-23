@@ -14,14 +14,6 @@ export class Comment {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => User)
-  @JoinColumn({ name: "user_id" })
-  user: User;
-
-  @ManyToOne(() => Post)
-  @JoinColumn({ name: "post_id" })
-  post: Post;
-
   @Column()
   user_id: number;
 
@@ -36,4 +28,12 @@ export class Comment {
 
   @CreateDateColumn({ type: "timestamp" })
   updated_at: Date;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: "user_id" })
+  user: User;
+
+  @ManyToOne(() => Post)
+  @JoinColumn({ name: "post_id" })
+  post: Post;
 }
