@@ -8,14 +8,17 @@ async function bootstrap() {
 
   app.use(cookieParser());
 
+  const corsOriginsString = process.env.CORS_ORIGIN;
+  const allowedOrigins = corsOriginsString ? corsOriginsString.split(",") : [];
+
   app.enableCors({
-    origin: [process.env.CORS_ORIGIN],
+    origin: allowedOrigins,
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
     credentials: true,
   });
 
   app.useGlobalInterceptors(new ResponseInterceptor());
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT || 8080;
   await app.listen(port, "0.0.0.0");
 }
 
