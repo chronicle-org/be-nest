@@ -19,17 +19,26 @@ jobs:
         with:
           fetch-depth: 0
 
+      # 👇 ADD THIS NEW STEP 👇
+      - name: Configure Git User
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      # 👆 NEW STEP END 👆
+
       - name: Check merge conflict with main
         run: |
           echo "Fetching latest main..."
           git fetch origin main
 
           echo "Creating temp merge branch..."
+          # Note: Since you're checking out a detached HEAD in actions/checkout, 
+          # you should base the merge attempt on the target branch (main).
           git checkout -b temp origin/main
 
           echo "Attempting merge with PR branch..."
           if ! git merge --no-commit --no-ff origin/${{ github.event.pull_request.head.ref }}; then
-            echo "❌ Merge conflict detected!"
+            echo "❌ Merge conflict detected! Please resolve conflicts locally."
             exit 1
           fi
 
