@@ -64,6 +64,18 @@ jobs:
         run: npm run build
 
       - name: Validate dev server (app runs)
+        env:
+            # --- SECRETS (HIGHLY SENSITIVE) ---
+            DATABASE_URL: ${{ secrets.DATABASE_URL }}
+            JWT_SECRET: ${{ secrets.JWT_SECRET }}
+            SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+            SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+            # --- VARIABLES (NON-SENSITIVE CONFIG) ---
+            PORT: ${{ vars.PORT }}
+            NODE_ENV: ${{ vars.NODE_ENV }}
+            SUPABASE_BUCKET: ${{ vars.SUPABASE_BUCKET }}
+            CORS_ORIGIN: ${{ vars.CORS_ORIGIN }}
         run: |
           echo "Starting dev server..."
           npm run start &
