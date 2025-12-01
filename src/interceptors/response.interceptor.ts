@@ -29,7 +29,12 @@ export class ResponseInterceptor<T>
   ): Observable<SuccessResponse<T>> {
     return next.handle().pipe(
       map((data): SuccessResponse<T> => {
-        if (data && typeof data === "object" && "data" in data) {
+        if (
+          data &&
+          typeof data === "object" &&
+          "data" in data &&
+          data["total"] === undefined
+        ) {
           const custom = data;
           return {
             content: custom.data ?? null,

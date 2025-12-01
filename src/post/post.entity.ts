@@ -33,6 +33,12 @@ export class Post {
   @Column({ default: 0 })
   comment_count: number;
 
+  @Column({ length: 255, default: "" })
+  tags: string; // Comma-separated string of tags
+
+  @Column({ default: true })
+  visibility: boolean;
+
   @CreateDateColumn({ type: "timestamp" })
   created_at: Date;
 

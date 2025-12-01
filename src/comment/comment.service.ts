@@ -84,7 +84,7 @@ export class CommentService {
       const comment = await this.repo.findOneBy({ id });
       const post = await this.postRepo.findOneBy({ id: comment?.post_id });
       if (!comment) throw new NotFoundException("Comment not found");
-      else if (comment.user_id !== userId)
+      else if (comment.user_id !== userId && post?.user_id !== userId)
         throw new UnauthorizedException("Unauthorized to update this comment");
       await this.repo.delete({ id });
       if (post) {

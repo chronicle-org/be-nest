@@ -5,8 +5,13 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { FindOperator, ILike, Repository } from "typeorm";
 import { Post } from "./post.entity";
+
+export interface PagedResult {
+  data: Post[];
+  total: number;
+}
 
 @Injectable()
 export class PostService {
@@ -44,6 +49,7 @@ export class PostService {
           sub_title: data.sub_title,
           thumbnail_url: data.thumbnail_url,
           updated_at: new Date(),
+          visibility: data.visibility,
         },
       );
       return this.repo.findOneBy({ id: data.id! }) as Promise<Post>;
@@ -53,20 +59,74 @@ export class PostService {
     }
   }
 
-  findAll(): Promise<Post[]> {
-    return this.repo.find({
+  async findAll(
+    page: number = 1,
+    limit: number = 10,
+    search: string = "",
+  ): Promise<PagedResult> {
+    const skip = (page - 1) * limit;
+
+    let searchCondition: Record<string, FindOperator<string>>[] = [];
+    const searchTerms = search.split(/\s+/).filter((term) => term.length > 0);
+
+    if (searchTerms.length > 0) {
+      searchCondition = [
+        { title: ILike(`%${search}%`) },
+        { sub_title: ILike(`%${search}%`) },
+      ];
+
+      for (const term of searchTerms) {
+        searchCondition.push({ tags: ILike(`%${term}%`) });
+      }
+    } else {
+      searchCondition = [{}];
+    }
+    const [data, total] = await this.repo.findAndCount({
+      where: searchCondition,
       relations: ["user"],
+      order: { id: "DESC" },
+      take: limit,
+      skip: skip,
     });
+
+    return { data, total };
   }
 
-  findAllByUserId(user_id: number): Promise<Post[]> {
-    return this.repo.find({
-      where: { user_id },
+  async findAllByUserId(
+    user_id: number,
+    page: number = 1,
+    limit: number = 10,
+    search: string = "",
+  ): Promise<PagedResult> {
+    const skip = (page - 1) * limit;
+
+    const baseCondition = { user_id };
+
+    let searchConditions: Record<string, FindOperator<string> | number>[] = [];
+    const searchTerms = search.split(/\s+/).filter((term) => term.length > 0);
+
+    if (searchTerms.length > 0) {
+      searchConditions = [
+        { ...baseCondition, title: ILike(`%${search}%`) },
+        { ...baseCondition, sub_title: ILike(`%${search}%`) },
+      ];
+
+      for (const term of searchTerms) {
+        searchConditions.push({ ...baseCondition, tags: ILike(`%${term}%`) });
+      }
+    } else {
+      searchConditions = [{ ...baseCondition }];
+    }
+
+    const [data, total] = await this.repo.findAndCount({
+      where: searchConditions,
       relations: ["user"],
-      order: {
-        id: "DESC",
-      },
+      order: { id: "DESC" },
+      take: limit,
+      skip: skip,
     });
+
+    return { data, total };
   }
 
   async findOne(id: number): Promise<Post | null> {
