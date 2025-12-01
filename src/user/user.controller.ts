@@ -18,7 +18,6 @@ import type { JwtPayload } from "src/auth/jwt.strategy";
 export class UserController {
   constructor(private readonly service: UserService) {}
 
-  @UseGuards(JwtAuthGuard)
   @Get()
   findAll(): Promise<User[]> {
     return this.service.findAll();

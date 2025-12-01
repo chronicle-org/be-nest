@@ -38,6 +38,9 @@ export class User {
   @Column({ type: "varchar", length: 255, nullable: true })
   profile_description: string;
 
+  @Column({ type: "varchar", length: 100, nullable: true })
+  tags: string; // comma separated tags
+
   @OneToMany(() => Post, (post) => post.user)
   posts: Post[];
 

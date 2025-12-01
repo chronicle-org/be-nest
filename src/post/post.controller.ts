@@ -7,9 +7,10 @@ import {
   ParseIntPipe,
   Post,
   Put,
+  Query,
   UseGuards,
 } from "@nestjs/common";
-import { PostService } from "./post.service";
+import { PagedResult, PostService } from "./post.service";
 import { Post as PostEntity } from "./post.entity";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
@@ -17,18 +18,25 @@ import type { JwtPayload } from "src/auth/jwt.strategy";
 
 @Controller("post")
 export class PostController {
-  constructor(private readonly service: PostService) {}
+  constructor(private readonly service: PostService) { }
 
   @Get()
-  findAll(): Promise<PostEntity[]> {
-    return this.service.findAll();
+  findAll(
+    @Query("page") page?: number,
+    @Query("limit") limit?: number,
+    @Query("search") search?: string,
+  ): Promise<PagedResult> {
+    return this.service.findAll(page, limit, search);
   }
 
   @Get("/user/:user_id")
   findAllByUserId(
     @Param("user_id", ParseIntPipe) user_id: number,
-  ): Promise<PostEntity[]> {
-    return this.service.findAllByUserId(user_id);
+    @Query("page") page?: number,
+    @Query("limit") limit?: number,
+    @Query("search") search?: string,
+  ): Promise<PagedResult> {
+    return this.service.findAllByUserId(user_id, page, limit, search);
   }
 
   @Get("/:id")
