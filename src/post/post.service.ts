@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -7,6 +8,8 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import { FindOperator, ILike, Repository } from "typeorm";
 import { Post } from "./post.entity";
+import { InteractionType } from "src/utils/types";
+import { User } from "src/user/user.entity";
 
 export interface PagedResult {
   data: Post[];
@@ -18,6 +21,8 @@ export class PostService {
   constructor(
     @InjectRepository(Post)
     private repo: Repository<Post>,
+    @InjectRepository(User)
+    private userRepo: Repository<User>,
   ) {}
 
   async create(data: Partial<Post>): Promise<Post> {
@@ -154,6 +159,73 @@ export class PostService {
     } catch (error) {
       if (error instanceof InternalServerErrorException) throw error;
       throw new InternalServerErrorException("Error deleting post");
+    }
+  }
+
+  async interaction(
+    action_type: InteractionType,
+    post_id: number,
+    user_id: number,
+  ): Promise<{ post: Post; user: User } | null> {
+    try {
+      const post = await this.repo.findOneBy({ id: post_id });
+      const user = await this.userRepo.findOneBy({ id: user_id });
+      if (!post) throw new NotFoundException("Post not found");
+      else if (!user) throw new NotFoundException("User not found");
+      switch (action_type) {
+        case "like":
+          post.likes = post.likes || [];
+          user.likes = user.likes || [];
+          if (post.likes.includes(user_id))
+            throw new BadRequestException("User already liked this post");
+          post.likes.push(user_id);
+          post.likes_count++;
+          user.likes.push(post_id);
+          user.likes_count++;
+          break;
+        case "unlike":
+          post.likes = post.likes || [];
+          user.likes = user.likes || [];
+          if (!post.likes.includes(user_id))
+            throw new BadRequestException("User has not liked this post");
+          post.likes = post.likes.filter((id) => id !== user_id);
+          post.likes_count--;
+          user.likes = user.likes.filter((id) => id !== post_id);
+          user.likes_count--;
+          break;
+        case "bookmark":
+          post.bookmarks = post.bookmarks || [];
+          user.bookmarks = user.bookmarks || [];
+          if (post.bookmarks.includes(user_id))
+            throw new BadRequestException("User already bookmarked this post");
+          post.bookmarks.push(user_id);
+          post.bookmarks_count++;
+          user.bookmarks.push(post_id);
+          user.bookmarks_count++;
+          break;
+        case "unbookmark":
+          post.bookmarks = post.bookmarks || [];
+          user.bookmarks = user.bookmarks || [];
+          if (!post.bookmarks.includes(user_id))
+            throw new BadRequestException("User has not bookmarked this post");
+          post.bookmarks = post.bookmarks.filter((id) => id !== user_id);
+          post.bookmarks_count--;
+          user.bookmarks = user.bookmarks.filter((id) => id !== post_id);
+          user.bookmarks_count--;
+          break;
+        case "share":
+          post.share_count++;
+          break;
+        case "view":
+          post.view_count++;
+          break;
+      }
+      await this.repo.save(post);
+      await this.userRepo.save(user);
+      return { post, user };
+    } catch (error) {
+      if (error instanceof InternalServerErrorException) throw error;
+      throw new InternalServerErrorException("Error interacting with post");
     }
   }
 }

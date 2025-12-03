@@ -15,10 +15,12 @@ import { Post as PostEntity } from "./post.entity";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "src/auth/jwt.strategy";
+import type { InteractionType } from "src/utils/types";
+import { User } from "src/user/user.entity";
 
 @Controller("post")
 export class PostController {
-  constructor(private readonly service: PostService) { }
+  constructor(private readonly service: PostService) {}
 
   @Get()
   findAll(
@@ -71,5 +73,16 @@ export class PostController {
     @CurrentUser() user: JwtPayload,
   ): Promise<{ message: string }> {
     return this.service.delete(id, user.user_id);
+  }
+
+  @Put("/interaction/:action_type/:post_id")
+  @UseGuards(JwtAuthGuard)
+  interaction(
+    @Param("action_type")
+    action_type: InteractionType,
+    @Param("post_id", ParseIntPipe) post_id: number,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<{ post: PostEntity; user: User } | null> {
+    return this.service.interaction(action_type, post_id, user.user_id);
   }
 }
