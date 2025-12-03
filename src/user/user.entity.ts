@@ -41,6 +41,30 @@ export class User {
   @Column({ type: "varchar", length: 100, nullable: true })
   tags: string; // comma separated tags
 
+  @Column({ type: "jsonb", default: [] })
+  following: number[];
+
+  @Column({ default: 0 })
+  following_count: number;
+
+  @Column({ type: "jsonb", default: [] })
+  followers: number[];
+
+  @Column({ default: 0 })
+  followers_count: number;
+
+  @Column({ type: "jsonb", default: [] })
+  likes: number[];
+
+  @Column({ default: 0 })
+  likes_count: number;
+
+  @Column({ type: "jsonb", default: [] })
+  bookmarks: number[];
+
+  @Column({ default: 0 })
+  bookmarks_count: number;
+
   @OneToMany(() => Post, (post) => post.user)
   posts: Post[];
 

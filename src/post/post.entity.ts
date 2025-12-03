@@ -39,6 +39,24 @@ export class Post {
   @Column({ default: true })
   visibility: boolean;
 
+  @Column({ default: 0 })
+  bookmarks_count: number;
+
+  @Column({ type: "jsonb", nullable: true, default: [] })
+  bookmarks: number[];
+
+  @Column({ default: 0 })
+  share_count: number;
+
+  @Column({ default: 0 })
+  view_count: number;
+
+  @Column({ default: 0 })
+  likes_count: number;
+
+  @Column({ type: "jsonb", nullable: true, default: [] })
+  likes: number[];
+
   @CreateDateColumn({ type: "timestamp" })
   created_at: Date;
 
