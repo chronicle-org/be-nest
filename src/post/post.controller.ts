@@ -85,4 +85,12 @@ export class PostController {
   ): Promise<{ post: PostEntity; user: User } | null> {
     return this.service.interaction(action_type, post_id, user.user_id);
   }
+
+  @Put("/counter/:action/:post_id")
+  incrementCounter(
+    @Param("action") action: "share" | "view",
+    @Param("post_id", ParseIntPipe) post_id: number,
+  ): Promise<PostEntity> {
+    return this.service.incrementPostCount(post_id, action);
+  }
 }
