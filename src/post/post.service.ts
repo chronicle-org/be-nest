@@ -213,12 +213,6 @@ export class PostService {
           user.bookmarks = user.bookmarks.filter((id) => id !== post_id);
           user.bookmarks_count--;
           break;
-        case "share":
-          post.share_count++;
-          break;
-        case "view":
-          post.view_count++;
-          break;
       }
       await this.repo.save(post);
       await this.userRepo.save(user);
@@ -226,6 +220,23 @@ export class PostService {
     } catch (error) {
       if (error instanceof InternalServerErrorException) throw error;
       throw new InternalServerErrorException("Error interacting with post");
+    }
+  }
+
+  async incrementPostCount(
+    post_id: number,
+    action: "share" | "view",
+  ): Promise<Post> {
+    const countField = action === "share" ? "share_count" : "view_count";
+    try {
+      const post = await this.repo.findOneBy({ id: post_id });
+      if (!post) throw new NotFoundException("Post not found");
+      post[countField]++;
+      await this.repo.save(post);
+      return post;
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new InternalServerErrorException(`Error ${action} post`);
     }
   }
 }
