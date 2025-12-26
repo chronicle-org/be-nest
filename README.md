@@ -22,7 +22,7 @@ Chronicle Backend is the core API service of the Chronicle ecosystem. It connect
 
 - **Framework:** NestJS + TypeScript  
 - **Database:** PostgreSQL (Supabase)  
-- **ORM:** Prisma / TypeORM (update to match your codebase)  
+- **ORM:** TypeORM  
 - **API Style:** REST (GraphQL optional)  
 - **Deployment:** Google Cloud Run  
 - **Auth:** JWT / Supabase Auth
