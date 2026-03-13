@@ -41,14 +41,14 @@ export class CommentController {
     return this.service.update(id, data, user.user_id);
   }
 
-  @Get("/by-post/:post_id")
+  @Get("/post/:post_id")
   findCommentsByPostId(
     @Param("post_id", ParseIntPipe) post_id: number,
   ): Promise<Comment[]> {
     return this.service.findByPostId(post_id);
   }
 
-  @Get("/by-user/:user_id")
+  @Get("/user/:user_id")
   findCommentsByUserId(
     @Param("user_id", ParseIntPipe) user_id: number,
   ): Promise<Comment[]> {
