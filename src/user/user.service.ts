@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, Repository } from "typeorm";
 import { User } from "./user.entity";
@@ -42,10 +42,21 @@ export class UserService {
   }
 
   async follow(follower_id: number, followee_id: number): Promise<User> {
+    // Prevent self-follow
+    if (follower_id === followee_id) {
+      throw new BadRequestException("Cannot follow yourself");
+    }
+
     const follower = await this.findOne(follower_id);
     const followee = await this.findOne(followee_id);
     if (!follower || !followee) throw new NotFoundException();
+
     follower.following = follower.following || [];
+    // Prevent duplicate follows
+    if (follower.following.includes(followee_id)) {
+      throw new BadRequestException("Already following this user");
+    }
+
     follower.following.push(followee_id);
     follower.following_count++;
     followee.followers = followee.followers || [];
@@ -60,7 +71,12 @@ export class UserService {
     const follower = await this.findOne(follower_id);
     const followee = await this.findOne(followee_id);
     if (!follower || !followee) throw new NotFoundException();
+
     follower.following = follower.following || [];
+    if (!follower.following.includes(followee_id)) {
+      throw new BadRequestException("Not following this user");
+    }
+
     follower.following = follower.following.filter((id) => id !== followee_id);
     follower.following_count--;
     followee.followers = followee.followers || [];

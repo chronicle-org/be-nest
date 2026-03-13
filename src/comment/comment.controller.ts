@@ -11,6 +11,8 @@ import {
 } from "@nestjs/common";
 import { CommentService } from "./comment.service";
 import { Comment } from "./comment.entity";
+import { CreateCommentDto } from "./dto/comment.dto";
+import { UpdateCommentDto } from "./dto/comment.dto";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "src/auth/jwt.strategy";
@@ -22,7 +24,7 @@ export class CommentController {
   @Post()
   @UseGuards(JwtAuthGuard)
   createComment(
-    @Body() data: Partial<Comment>,
+    @Body() data: CreateCommentDto,
     @CurrentUser() user: JwtPayload,
   ): Promise<Comment> {
     const commentData = { ...data, user_id: user.user_id };
@@ -33,20 +35,20 @@ export class CommentController {
   @UseGuards(JwtAuthGuard)
   updateComment(
     @Param("id", ParseIntPipe) id: number,
-    @Body() data: Partial<Comment>,
+    @Body() data: UpdateCommentDto,
     @CurrentUser() user: JwtPayload,
   ): Promise<Comment> {
     return this.service.update(id, data, user.user_id);
   }
 
-  @Get("/:post_id")
+  @Get("/by-post/:post_id")
   findCommentsByPostId(
     @Param("post_id", ParseIntPipe) post_id: number,
   ): Promise<Comment[]> {
     return this.service.findByPostId(post_id);
   }
 
-  @Get("/user/:user_id")
+  @Get("/by-user/:user_id")
   findCommentsByUserId(
     @Param("user_id", ParseIntPipe) user_id: number,
   ): Promise<Comment[]> {

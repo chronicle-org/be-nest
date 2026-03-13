@@ -12,6 +12,9 @@ import {
 } from "@nestjs/common";
 import { PagedResult, PostService } from "./post.service";
 import { Post as PostEntity } from "./post.entity";
+import { CreatePostDto } from "./dto/post.dto";
+import { UpdatePostDto } from "./dto/post.dto";
+import { FindPostsQueryDto } from "./dto/find-posts-query.dto";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "src/auth/jwt.strategy";
@@ -23,22 +26,25 @@ export class PostController {
   constructor(private readonly service: PostService) {}
 
   @Get()
-  findAll(
-    @Query("page") page?: number,
-    @Query("limit") limit?: number,
-    @Query("search") search?: string,
-  ): Promise<PagedResult> {
-    return this.service.findAll(page, limit, search);
+  findAll(@Query() queryDto: FindPostsQueryDto): Promise<PagedResult> {
+    return this.service.findAll(
+      queryDto.page,
+      queryDto.limit,
+      queryDto.search,
+    );
   }
 
   @Get("/user/:user_id")
   findAllByUserId(
     @Param("user_id", ParseIntPipe) user_id: number,
-    @Query("page") page?: number,
-    @Query("limit") limit?: number,
-    @Query("search") search?: string,
+    @Query() queryDto: FindPostsQueryDto,
   ): Promise<PagedResult> {
-    return this.service.findAllByUserId(user_id, page, limit, search);
+    return this.service.findAllByUserId(
+      user_id,
+      queryDto.page,
+      queryDto.limit,
+      queryDto.search,
+    );
   }
 
   @Get("/:id")
@@ -49,7 +55,7 @@ export class PostController {
   @Post()
   @UseGuards(JwtAuthGuard)
   create(
-    @Body() post: Partial<PostEntity>,
+    @Body() post: CreatePostDto,
     @CurrentUser() user: JwtPayload,
   ): Promise<PostEntity> {
     const postData = { ...post, user_id: user.user_id };
@@ -60,7 +66,7 @@ export class PostController {
   @UseGuards(JwtAuthGuard)
   update(
     @Param("id", ParseIntPipe) id: number,
-    @Body() post: Partial<PostEntity>,
+    @Body() post: UpdatePostDto,
     @CurrentUser() user: JwtPayload,
   ): Promise<PostEntity | null> {
     return this.service.update({ ...post, id, user_id: user.user_id });
