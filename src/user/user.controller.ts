@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import { UserService } from "./user.service";
 import { User } from "./user.entity";
+import { UpdateUserDto } from "./dto/user.dto";
 import { Post as PostEntity } from "../post/post.entity";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
@@ -38,7 +39,7 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   @Put()
   update(
-    @Body() data: Partial<User>,
+    @Body() data: UpdateUserDto,
     @CurrentUser() user: JwtPayload,
   ): Promise<User> {
     return this.service.update(user.user_id, data);

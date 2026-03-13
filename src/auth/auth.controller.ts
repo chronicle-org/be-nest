@@ -1,6 +1,7 @@
 import { Controller, Post, Body, Res } from "@nestjs/common";
 import { AuthService } from "./auth.service";
-import type { TRegisterData } from "./auth.service";
+import { RegisterDto } from "./dto/register.dto";
+import { LoginDto } from "./dto/login.dto";
 import { User } from "../user/user.entity";
 import type { Response } from "express";
 import { cookieName } from "./jwt.strategy";
@@ -11,11 +12,7 @@ export class AuthController {
 
   @Post("/login")
   async login(
-    @Body()
-    data: {
-      email: string;
-      password: string;
-    },
+    @Body() data: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<User | null | string> {
     const userData = await this.service.login(data);
@@ -31,10 +28,7 @@ export class AuthController {
   }
 
   @Post("/register")
-  register(
-    @Body()
-    data: TRegisterData,
-  ): Promise<Partial<User> | null | string> {
+  register(@Body() data: RegisterDto): Promise<Partial<User> | null | string> {
     return this.service.register(data);
   }
 

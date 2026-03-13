@@ -60,10 +60,10 @@ export class CommentService {
           id: "DESC",
         },
       });
-      if (!comments) throw new NotFoundException("Comments not found");
+      // Note: find() returns empty array if no results, not null
       return comments;
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
+      if (error instanceof NotFoundException) throw error;
       throw new InternalServerErrorException("Error fetching comments");
     }
   }
@@ -71,10 +71,9 @@ export class CommentService {
   async findByPosterId(user_id: number): Promise<Comment[]> {
     try {
       const comments = await this.repo.findBy({ user_id });
-      if (!comments) throw new NotFoundException("Comments not found");
       return comments;
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
+      if (error instanceof NotFoundException) throw error;
       throw new InternalServerErrorException("Error fetching comments");
     }
   }
@@ -82,10 +81,15 @@ export class CommentService {
   async delete(id: number, userId: number): Promise<{ message: string }> {
     try {
       const comment = await this.repo.findOneBy({ id });
-      const post = await this.postRepo.findOneBy({ id: comment?.post_id });
       if (!comment) throw new NotFoundException("Comment not found");
-      else if (comment.user_id !== userId && post?.user_id !== userId)
-        throw new UnauthorizedException("Unauthorized to update this comment");
+
+      const post = await this.postRepo.findOneBy({ id: comment.post_id });
+
+      // Check if user is either the comment author or the post author
+      if (comment.user_id !== userId && post?.user_id !== userId) {
+        throw new UnauthorizedException("You cannot delete this comment");
+      }
+
       await this.repo.delete({ id });
       if (post) {
         await this.postRepo.decrement(
@@ -96,7 +100,12 @@ export class CommentService {
       }
       return { message: "Comment deleted successfully" };
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
+      if (
+        error instanceof NotFoundException ||
+        error instanceof UnauthorizedException
+      ) {
+        throw error;
+      }
       throw new InternalServerErrorException("Error deleting comment");
     }
   }
