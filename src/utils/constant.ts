@@ -1,4 +1,4 @@
-import { FileUploadCategory } from './file-upload-category.enum';
+import { FileUploadCategory } from "./file-upload-category.enum";
 
 export const fileUploadKey = {
   1: FileUploadCategory.POST_THUMBNAIL,

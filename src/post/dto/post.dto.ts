@@ -1,4 +1,4 @@
-import { IsString, MaxLength, IsOptional, IsBoolean, IsUrl } from 'class-validator';
+import { IsString, MaxLength, IsOptional, IsBoolean, IsUrl } from "class-validator";
 
 export class CreatePostDto {
   @IsString()
@@ -16,7 +16,7 @@ export class CreatePostDto {
   content?: string;
 
   @IsOptional()
-  @IsUrl({}, { message: 'Invalid thumbnail URL' })
+  @IsUrl({}, { message: "Invalid thumbnail URL" })
   @MaxLength(255)
   thumbnail_url?: string;
 
@@ -42,7 +42,7 @@ export class UpdatePostDto {
   content?: string;
 
   @IsOptional()
-  @IsUrl({}, { message: 'Invalid thumbnail URL' })
+  @IsUrl({}, { message: "Invalid thumbnail URL" })
   @MaxLength(255)
   thumbnail_url?: string;
 
