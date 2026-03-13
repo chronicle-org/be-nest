@@ -34,7 +34,7 @@ export class Post {
   comment_count: number;
 
   @Column({ length: 255, default: "" })
-  tags: string; // Comma-separated string of tags
+  tags: string;
 
   @Column({ default: true })
   visibility: boolean;

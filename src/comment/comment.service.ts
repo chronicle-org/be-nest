@@ -84,7 +84,7 @@ export class CommentService {
       if (!comment) throw new NotFoundException("Comment not found");
 
       const post = await this.postRepo.findOneBy({ id: comment.post_id });
-      
+
       // Check if user is either the comment author or the post author
       if (comment.user_id !== userId && post?.user_id !== userId) {
         throw new UnauthorizedException("You cannot delete this comment");

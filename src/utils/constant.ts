@@ -8,4 +8,3 @@ export const fileUploadKey = {
 
 // Export enum for new code to use
 export { FileUploadCategory };
-

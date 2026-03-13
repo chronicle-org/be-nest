@@ -1,7 +1,6 @@
-import { IsOptional, IsString, MaxLength, Min, Max } from 'class-validator';
+import { IsOptional, IsString, MaxLength, Min, Max } from "class-validator";
 
 const MAX_SEARCH_LENGTH = 100;
-const MAX_PAGE = 100;
 const MAX_LIMIT = 50;
 
 export class FindPostsQueryDto {

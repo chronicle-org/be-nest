@@ -27,11 +27,7 @@ export class PostController {
 
   @Get()
   findAll(@Query() queryDto: FindPostsQueryDto): Promise<PagedResult> {
-    return this.service.findAll(
-      queryDto.page,
-      queryDto.limit,
-      queryDto.search,
-    );
+    return this.service.findAll(queryDto.page, queryDto.limit, queryDto.search);
   }
 
   @Get("/user/:user_id")

@@ -39,7 +39,7 @@ export class User {
   profile_description: string;
 
   @Column({ type: "varchar", length: 100, nullable: true })
-  tags: string; // comma separated tags
+  tags: string;
 
   @Column({ type: "jsonb", default: [] })
   following: number[];
