@@ -10,6 +10,7 @@ import { FindOperator, ILike, Repository } from "typeorm";
 import { Post } from "./post.entity";
 import { InteractionType } from "src/utils/types";
 import { User } from "src/user/user.entity";
+import { calculateReadingTime } from "src/utils";
 
 export interface PagedResult {
   data: Post[];
@@ -26,6 +27,8 @@ export class PostService {
   ) {}
 
   async create(data: Partial<Post>): Promise<Post> {
+    const readingTime = data.content ? calculateReadingTime(data.content) : 0;
+
     const postData: Partial<Post> = {
       user_id: data.user_id,
       content: data.content,
@@ -34,6 +37,8 @@ export class PostService {
       title: data.title,
       sub_title: data.sub_title,
       thumbnail_url: data.thumbnail_url,
+      is_draft: data.is_draft || false,
+      reading_time: readingTime,
     };
 
     const savedPost = await this.repo.save(postData);
@@ -46,6 +51,11 @@ export class PostService {
       if (!postData) throw new NotFoundException("Post not found");
       else if (postData.user_id !== data.user_id)
         throw new UnauthorizedException("Unauthorized to update this post");
+
+      const readingTime = data.content
+        ? calculateReadingTime(data.content)
+        : postData.reading_time;
+
       await this.repo.update(
         { id: data.id },
         {
@@ -55,6 +65,9 @@ export class PostService {
           thumbnail_url: data.thumbnail_url,
           updated_at: new Date(),
           visibility: data.visibility,
+          is_draft:
+            data.is_draft !== undefined ? data.is_draft : postData.is_draft,
+          reading_time: readingTime,
         },
       );
       return this.repo.findOneBy({ id: data.id! }) as Promise<Post>;
@@ -70,24 +83,25 @@ export class PostService {
     search: string = "",
   ): Promise<PagedResult> {
     const skip = (page - 1) * limit;
-
-    let searchCondition: Record<string, FindOperator<string>>[] = [];
     const searchTerms = search.split(/\s+/).filter((term) => term.length > 0);
 
-    if (searchTerms.length > 0) {
-      searchCondition = [
-        { title: ILike(`%${search}%`) },
-        { sub_title: ILike(`%${search}%`) },
-      ];
+    let searchConditions: Record<string, FindOperator<string> | boolean>[] = [];
 
-      for (const term of searchTerms) {
-        searchCondition.push({ tags: ILike(`%${term}%`) });
-      }
+    if (searchTerms.length > 0) {
+      searchConditions = [
+        { title: ILike(`%${search}%`), is_draft: false },
+        { sub_title: ILike(`%${search}%`), is_draft: false },
+        ...searchTerms.map((term) => ({
+          tags: ILike(`%${term}%`),
+          is_draft: false,
+        })),
+      ];
     } else {
-      searchCondition = [{}];
+      searchConditions = [{ is_draft: false }];
     }
+
     const [data, total] = await this.repo.findAndCount({
-      where: searchCondition,
+      where: searchConditions,
       relations: ["user"],
       order: { id: "DESC" },
       take: limit,
@@ -132,6 +146,43 @@ export class PostService {
     });
 
     return { data, total };
+  }
+
+  async getDrafts(
+    user_id: number,
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<PagedResult> {
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await this.repo.findAndCount({
+      where: { user_id, is_draft: true },
+      relations: ["user"],
+      order: { id: "DESC" },
+      take: limit,
+      skip: skip,
+    });
+
+    return { data, total };
+  }
+
+  async publishDraft(post_id: number, user_id: number): Promise<Post> {
+    try {
+      const post = await this.repo.findOneBy({ id: post_id });
+      if (!post) throw new NotFoundException("Post not found");
+      if (post.user_id !== user_id)
+        throw new UnauthorizedException("Unauthorized to publish this post");
+      if (!post.is_draft)
+        throw new BadRequestException("This post is not a draft");
+
+      post.is_draft = false;
+      post.updated_at = new Date();
+      await this.repo.save(post);
+      return post;
+    } catch (error) {
+      if (error instanceof InternalServerErrorException) throw error;
+      throw new InternalServerErrorException("Error publishing draft");
+    }
   }
 
   async findOne(id: number): Promise<Post | null> {

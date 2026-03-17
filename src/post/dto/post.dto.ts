@@ -30,6 +30,10 @@ export class CreatePostDto {
   @IsString()
   @MaxLength(255)
   tags?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  is_draft?: boolean;
 }
 
 export class UpdatePostDto {
@@ -60,4 +64,8 @@ export class UpdatePostDto {
   @IsOptional()
   @IsBoolean()
   visibility?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  is_draft?: boolean;
 }

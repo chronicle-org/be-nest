@@ -57,6 +57,12 @@ export class Post {
   @Column({ type: "jsonb", nullable: true, default: [] })
   likes: number[];
 
+  @Column({ default: false })
+  is_draft: boolean;
+
+  @Column({ default: 0 })
+  reading_time: number;
+
   @CreateDateColumn({ type: "timestamp" })
   created_at: Date;
 

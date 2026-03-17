@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   ParseIntPipe,
@@ -48,6 +49,19 @@ export class PostController {
     return this.service.findOne(id);
   }
 
+  @Get("/user/:user_id/drafts")
+  @UseGuards(JwtAuthGuard)
+  getDrafts(
+    @Param("user_id", ParseIntPipe) user_id: number,
+    @Query() queryDto: FindPostsQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<PagedResult> {
+    if (user.user_id !== user_id) {
+      throw new ForbiddenException("Cannot access other user's drafts");
+    }
+    return this.service.getDrafts(user_id, queryDto.page, queryDto.limit);
+  }
+
   @Post()
   @UseGuards(JwtAuthGuard)
   create(
@@ -75,6 +89,15 @@ export class PostController {
     @CurrentUser() user: JwtPayload,
   ): Promise<{ message: string }> {
     return this.service.delete(id, user.user_id);
+  }
+
+  @Put("/:id/publish")
+  @UseGuards(JwtAuthGuard)
+  publishDraft(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<PostEntity> {
+    return this.service.publishDraft(id, user.user_id);
   }
 
   @Put("/interaction/:action_type/:post_id")
