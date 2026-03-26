@@ -7,6 +7,8 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { In, Repository } from "typeorm";
 import { User } from "./user.entity";
 import { Post } from "../post/post.entity";
+import { NotificationService } from "src/notifications/notification.service";
+import { NotificationType } from "src/notifications/notification.entity";
 
 @Injectable()
 export class UserService {
@@ -15,6 +17,7 @@ export class UserService {
     private repo: Repository<User>,
     @InjectRepository(Post)
     private postRepo: Repository<Post>,
+    private notificationService: NotificationService,
   ) {}
 
   create(data: Partial<User>): Promise<User> {
@@ -68,6 +71,21 @@ export class UserService {
     followee.followers_count++;
     await this.repo.save(follower);
     await this.repo.save(followee);
+
+    const existingNotification =
+      await this.notificationService.findRecentNotificationsForUser(
+        followee_id,
+        follower_id,
+        NotificationType.FOLLOW,
+      );
+    if (!existingNotification) {
+      await this.notificationService.createNotification({
+        recipient_id: followee_id,
+        actor_id: follower_id,
+        type: NotificationType.FOLLOW,
+      });
+    }
+
     return follower;
   }
 

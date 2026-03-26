@@ -11,6 +11,13 @@ import { Post } from "./post.entity";
 import { InteractionType } from "src/utils/types";
 import { User } from "src/user/user.entity";
 import { calculateReadingTime } from "src/utils";
+import { NotificationGateway } from "src/notifications/notification.gateway";
+import { NotificationService } from "src/notifications/notification.service";
+import { NotificationSettingsService } from "src/notifications/notification-settings.service";
+import {
+  Notification,
+  NotificationType,
+} from "src/notifications/notification.entity";
 
 export interface PagedResult {
   data: Post[];
@@ -24,6 +31,9 @@ export class PostService {
     private repo: Repository<Post>,
     @InjectRepository(User)
     private userRepo: Repository<User>,
+    private notificationGateway: NotificationGateway,
+    private notificationService: NotificationService,
+    private notificationSettingsService: NotificationSettingsService,
   ) {}
 
   async create(data: Partial<Post>): Promise<Post> {
@@ -42,6 +52,13 @@ export class PostService {
     };
 
     const savedPost = await this.repo.save(postData);
+
+    if (!savedPost.is_draft) {
+      this.sendFollowerNotifications(savedPost).catch((err) =>
+        console.error("Notification error:", err),
+      );
+    }
+
     return savedPost;
   }
 
@@ -223,6 +240,7 @@ export class PostService {
       const user = await this.userRepo.findOneBy({ id: user_id });
       if (!post) throw new NotFoundException("Post not found");
       else if (!user) throw new NotFoundException("User not found");
+      let notification: Notification | null = null;
       switch (action_type) {
         case "like":
           post.likes = post.likes || [];
@@ -233,6 +251,23 @@ export class PostService {
           post.likes_count++;
           user.likes.push(post_id);
           user.likes_count++;
+          notification =
+            await this.notificationService.findRecentNotificationsForUser(
+              post.user_id,
+              user_id,
+              NotificationType.LIKE,
+            );
+          if (notification) break;
+          notification = await this.notificationService.createNotification({
+            recipient_id: post.user_id,
+            actor_id: user_id,
+            type: NotificationType.LIKE,
+            post_id: post.id,
+          });
+          this.notificationGateway.sendNotificationToUser(
+            post.user_id,
+            notification,
+          );
           break;
         case "unlike":
           post.likes = post.likes || [];
@@ -253,6 +288,23 @@ export class PostService {
           post.bookmarks_count++;
           user.bookmarks.push(post_id);
           user.bookmarks_count++;
+          notification =
+            await this.notificationService.findRecentNotificationsForUser(
+              post.user_id,
+              user_id,
+              NotificationType.BOOKMARK,
+            );
+          if (notification) break;
+          notification = await this.notificationService.createNotification({
+            recipient_id: post.user_id,
+            actor_id: user_id,
+            type: NotificationType.BOOKMARK,
+            post_id: post.id,
+          });
+          this.notificationGateway.sendNotificationToUser(
+            post.user_id,
+            notification,
+          );
           break;
         case "unbookmark":
           post.bookmarks = post.bookmarks || [];
@@ -288,6 +340,53 @@ export class PostService {
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       throw new InternalServerErrorException(`Error ${action} post`);
+    }
+  }
+
+  private async sendFollowerNotifications(post: Post): Promise<void> {
+    try {
+      if (!post?.user?.followers) return;
+
+      const followers = post.user.followers;
+
+      for (const followerId of followers) {
+        try {
+          const settings =
+            await this.notificationSettingsService.getUserSettings(followerId);
+
+          if (!settings.notify_followed_posts_enabled) continue;
+
+          const allowedUsers = settings.notify_followed_posts_from_users || [];
+          if (allowedUsers.length > 0 && !allowedUsers.includes(post.user_id)) {
+            continue;
+          }
+
+          const recent =
+            await this.notificationService.findRecentNotificationsForUser(
+              followerId,
+              post.user_id,
+              NotificationType.POST,
+            );
+          if (recent) continue;
+
+          const notification =
+            await this.notificationService.createNotification({
+              recipient_id: followerId,
+              actor_id: post.user_id,
+              type: NotificationType.POST,
+              post_id: post.id,
+            });
+
+          this.notificationGateway.sendNotificationToUser(
+            followerId,
+            notification,
+          );
+        } catch (err) {
+          console.error(`Failed to notify follower ${followerId}:`, err);
+        }
+      }
+    } catch (err) {
+      console.error("Error sending follower notifications:", err);
     }
   }
 }

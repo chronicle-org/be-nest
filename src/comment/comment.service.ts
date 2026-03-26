@@ -8,6 +8,8 @@ import { Comment } from "./comment.entity";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Post as PostEntity } from "src/post/post.entity";
+import { NotificationService } from "src/notifications/notification.service";
+import { NotificationType } from "src/notifications/notification.entity";
 
 @Injectable()
 export class CommentService {
@@ -16,6 +18,7 @@ export class CommentService {
     private repo: Repository<Comment>,
     @InjectRepository(PostEntity)
     private postRepo: Repository<PostEntity>,
+    private notificationService: NotificationService,
   ) {}
 
   async create(data: Partial<Comment>): Promise<Comment> {
@@ -29,6 +32,29 @@ export class CommentService {
 
     const savedComment = await this.repo.save(commentData);
     await this.postRepo.increment({ id: data.post_id }, "comment_count", 1);
+
+    const post = await this.postRepo.findOneBy({ id: data.post_id });
+    const existingNotification =
+      await this.notificationService.findRecentNotificationsForUser(
+        post?.user_id || 0,
+        data.user_id || 0,
+        NotificationType.COMMENT,
+        3,
+      );
+    if (
+      post &&
+      post.user_id !== data.user_id &&
+      !!data.user_id &&
+      !existingNotification
+    ) {
+      await this.notificationService.createNotification({
+        recipient_id: post.user_id,
+        actor_id: data.user_id,
+        type: NotificationType.COMMENT,
+        post_id: data.post_id,
+      });
+    }
+
     return savedComment;
   }
 
