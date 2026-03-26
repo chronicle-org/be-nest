@@ -35,10 +35,10 @@ export class Notification {
   })
   type: NotificationType;
 
-  @Column({ nullable: true })
+  @Column({ type: "integer", nullable: true })
   post_id: number | null;
 
-  @Column({ nullable: true })
+  @Column({ type: "integer", nullable: true })
   comment_id: number | null;
 
   @Column({ type: "text", nullable: true })
