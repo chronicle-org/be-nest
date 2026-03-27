@@ -5,10 +5,12 @@ import {
   IsEnum,
   IsString,
   IsArray,
+  IsBoolean,
+  IsInt,
 } from "class-validator";
 import { NotificationType } from "../notification.entity";
 
-export class getAllNotificationsForUserDto {
+export class GetAllNotificationsForUserDto {
   @IsNumber()
   @Min(1)
   @IsOptional()
@@ -45,24 +47,31 @@ export class InsertNotificationDto {
 
 export class UpdateNotificationSettingsDto {
   @IsOptional()
+  @IsBoolean()
   notify_comments?: boolean;
 
   @IsOptional()
+  @IsBoolean()
   notify_likes?: boolean;
 
   @IsOptional()
+  @IsBoolean()
   notify_follows?: boolean;
 
   @IsOptional()
+  @IsBoolean()
   notify_bookmarks?: boolean;
 
   @IsOptional()
+  @IsBoolean()
   notify_replies?: boolean;
 
   @IsOptional()
+  @IsBoolean()
   notify_followed_posts_enabled?: boolean;
 
   @IsOptional()
   @IsArray()
+  @IsInt({ each: true })
   notify_followed_posts_from_users?: number[];
 }

@@ -2,18 +2,18 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
+  // ForbiddenException,
   Param,
   ParseIntPipe,
-  Post,
+  // Post,
   Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
 import { Get } from "@nestjs/common";
 import {
-  getAllNotificationsForUserDto,
-  InsertNotificationDto,
+  GetAllNotificationsForUserDto,
+  // InsertNotificationDto,
   UpdateNotificationSettingsDto,
 } from "./dto/notifications.dto";
 import { NotificationService } from "./notification.service";
@@ -32,7 +32,7 @@ export class NotificationController {
   @Get("/")
   @UseGuards(JwtAuthGuard)
   async getNotificationsForUser(
-    @Query() queryDto: getAllNotificationsForUserDto,
+    @Query() queryDto: GetAllNotificationsForUserDto,
     @CurrentUser() user: JwtPayload,
   ) {
     const { limit = 20, page = 1 } = queryDto;
@@ -43,19 +43,23 @@ export class NotificationController {
     );
   }
 
-  @Post("/")
-  @UseGuards(JwtAuthGuard)
-  async insertNewNotification(
-    @Body() data: InsertNotificationDto,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    if (data.actor_id !== user.user_id) {
-      throw new ForbiddenException(
-        "Cannot create notifications as another user",
-      );
-    }
-    return await this.notificationService.createNotification(data);
-  }
+  // DISABLED FOR NOW
+  // @Post("/")
+  // @UseGuards(JwtAuthGuard)
+  // insertNewNotification(
+  //   @Body() data: InsertNotificationDto,
+  //   @CurrentUser() user: JwtPayload,
+  // ) {
+  //   if (data.actor_id !== user.user_id) {
+  //     throw new ForbiddenException(
+  //       "Cannot create notifications as another user",
+  //     );
+  //   }
+  //   // Client cannot initiate notifications - server-side only
+  //   throw new ForbiddenException(
+  //     "Client-initiated notifications are not allowed. Notifications are created server-side only.",
+  //   );
+  // }
 
   @Delete("/:id")
   @UseGuards(JwtAuthGuard)

@@ -23,7 +23,6 @@ import { NotificationSettings } from "src/notifications/notification-settings.en
       }),
       inject: [ConfigService],
     }),
-    NotificationSettings,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

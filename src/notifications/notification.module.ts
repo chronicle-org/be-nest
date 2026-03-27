@@ -3,7 +3,7 @@ import { NotificationGateway } from "./notification.gateway";
 import { Notification } from "./notification.entity";
 import { NotificationSettings } from "./notification-settings.entity";
 import { User } from "src/user/user.entity";
-import { TypeOrmModule } from "@nestjs/typeorm/dist/typeorm.module";
+import { TypeOrmModule } from "@nestjs/typeorm";
 import { NotificationService } from "./notification.service";
 import { NotificationSettingsService } from "./notification-settings.service";
 import { NotificationController } from "./notification.controller";

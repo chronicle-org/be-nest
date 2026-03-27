@@ -14,7 +14,7 @@ export class NotificationSettings {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column({ unique: true })
   user_id: number;
 
   @Column({ default: true })

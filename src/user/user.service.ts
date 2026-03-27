@@ -8,6 +8,8 @@ import { In, Repository } from "typeorm";
 import { User } from "./user.entity";
 import { Post } from "../post/post.entity";
 import { NotificationService } from "src/notifications/notification.service";
+import { NotificationSettingsService } from "src/notifications/notification-settings.service";
+import { NotificationGateway } from "src/notifications/notification.gateway";
 import { NotificationType } from "src/notifications/notification.entity";
 
 @Injectable()
@@ -18,6 +20,8 @@ export class UserService {
     @InjectRepository(Post)
     private postRepo: Repository<Post>,
     private notificationService: NotificationService,
+    private notificationSettingsService: NotificationSettingsService,
+    private notificationGateway: NotificationGateway,
   ) {}
 
   create(data: Partial<User>): Promise<User> {
@@ -72,18 +76,25 @@ export class UserService {
     await this.repo.save(follower);
     await this.repo.save(followee);
 
-    const existingNotification =
+    const existNotif =
       await this.notificationService.findRecentNotificationsForUser(
         followee_id,
         follower_id,
         NotificationType.FOLLOW,
       );
-    if (!existingNotification) {
-      await this.notificationService.createNotification({
-        recipient_id: followee_id,
-        actor_id: follower_id,
-        type: NotificationType.FOLLOW,
-      });
+
+    if (!existNotif) {
+      const settings =
+        await this.notificationSettingsService.getUserSettings(followee_id);
+
+      if (settings?.notify_follows !== false) {
+        const notif = await this.notificationService.createNotification({
+          recipient_id: followee_id,
+          actor_id: follower_id,
+          type: NotificationType.FOLLOW,
+        });
+        this.notificationGateway.sendNotificationToUser(followee_id, notif);
+      }
     }
 
     return follower;

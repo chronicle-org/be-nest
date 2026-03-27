@@ -1,3 +1,4 @@
+import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import {
   ConnectedSocket,
@@ -30,9 +31,11 @@ export class NotificationGateway
   constructor(
     @InjectRepository(Notification)
     private repo: Repository<Notification>,
+    private configService: ConfigService,
   ) {}
 
-  private userSockets = new Map<number, Socket>();
+  private userSockets = new Map<number, Set<string>>();
+
   private extractUserIdFromSocket(socket: Socket): number | null {
     try {
       const cookies = socket.handshake.headers.cookie || "";
@@ -44,10 +47,12 @@ export class NotificationGateway
 
       if (!token) return null;
 
-      const payload = jwt.verify(
-        token,
-        process.env.JWT_SECRET || "secret",
-      ) as JwtPayload;
+      const secret = this.configService.get<string>("JWT_SECRET");
+      if (!secret) {
+        throw new Error("JWT_SECRET not configured");
+      }
+
+      const payload = jwt.verify(token, secret) as JwtPayload;
       return payload.user_id;
     } catch (error) {
       console.error("Auth error:", error);
@@ -61,14 +66,20 @@ export class NotificationGateway
       socket.disconnect();
       return;
     }
-    await socket.join(`user_${userId}`);
-    this.userSockets.set(userId, socket);
+    await socket.join(`user:${userId}`);
+    if (!this.userSockets.has(userId)) {
+      this.userSockets.set(userId, new Set());
+    }
+    this.userSockets.get(userId)?.add(socket.id);
   }
 
   handleDisconnect(socket: Socket) {
-    for (const [userId, userSocket] of this.userSockets) {
-      if (userSocket.id === socket.id) {
-        this.userSockets.delete(userId);
+    for (const [userId, sockets] of this.userSockets) {
+      if (sockets.has(socket.id)) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) {
+          this.userSockets.delete(userId);
+        }
         break;
       }
     }
@@ -102,6 +113,14 @@ export class NotificationGateway
   }
 
   sendNotificationToUser(userId: number, notification: Notification) {
-    this.server.to(`user_${userId}`).emit("notification", notification);
+    this.server.to(`user:${userId}`).emit("notification", notification);
+  }
+
+  sendNotificationToUserBulk(notifications: Notification[]) {
+    notifications.forEach((notification) => {
+      this.server
+        .to(`user:${notification.recipient_id}`)
+        .emit("notification", notification);
+    });
   }
 }

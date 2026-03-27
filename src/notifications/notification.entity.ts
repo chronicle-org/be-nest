@@ -30,8 +30,7 @@ export class Notification {
   actor_id: number;
 
   @Column({
-    type: "enum",
-    enum: NotificationType,
+    type: "smallint",
   })
   type: NotificationType;
 

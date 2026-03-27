@@ -9,6 +9,8 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Post as PostEntity } from "src/post/post.entity";
 import { NotificationService } from "src/notifications/notification.service";
+import { NotificationSettingsService } from "src/notifications/notification-settings.service";
+import { NotificationGateway } from "src/notifications/notification.gateway";
 import { NotificationType } from "src/notifications/notification.entity";
 
 @Injectable()
@@ -19,6 +21,8 @@ export class CommentService {
     @InjectRepository(PostEntity)
     private postRepo: Repository<PostEntity>,
     private notificationService: NotificationService,
+    private notificationSettingsService: NotificationSettingsService,
+    private notificationGateway: NotificationGateway,
   ) {}
 
   async create(data: Partial<Comment>): Promise<Comment> {
@@ -34,25 +38,31 @@ export class CommentService {
     await this.postRepo.increment({ id: data.post_id }, "comment_count", 1);
 
     const post = await this.postRepo.findOneBy({ id: data.post_id });
-    const existingNotification =
-      await this.notificationService.findRecentNotificationsForUser(
-        post?.user_id || 0,
-        data.user_id || 0,
-        NotificationType.COMMENT,
-        3,
-      );
-    if (
-      post &&
-      post.user_id !== data.user_id &&
-      !!data.user_id &&
-      !existingNotification
-    ) {
-      await this.notificationService.createNotification({
-        recipient_id: post.user_id,
-        actor_id: data.user_id,
-        type: NotificationType.COMMENT,
-        post_id: data.post_id,
-      });
+    if (post && !!data.user_id && post.user_id !== data.user_id) {
+      const existingNotification =
+        await this.notificationService.findRecentNotificationsForUser(
+          post.user_id,
+          data.user_id,
+          NotificationType.COMMENT,
+          3,
+        );
+      if (!existingNotification) {
+        const postOwnerSettings =
+          await this.notificationSettingsService.getUserSettings(post.user_id);
+        if (postOwnerSettings?.notify_comments !== false) {
+          const notification =
+            await this.notificationService.createNotification({
+              recipient_id: post.user_id,
+              actor_id: data.user_id,
+              type: NotificationType.COMMENT,
+              post_id: data.post_id,
+            });
+          this.notificationGateway.sendNotificationToUser(
+            post.user_id,
+            notification,
+          );
+        }
+      }
     }
 
     return savedComment;
