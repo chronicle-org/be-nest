@@ -406,9 +406,12 @@ export class PostService {
               NotificationType.POST,
             );
 
+          const recentRecipientIds = new Set(
+            recent.map((notif) => notif.recipient_id),
+          );
+
           const followersToNotify = followersFollowedPostsEnabled.filter(
-            (followerId) =>
-              !recent.some((notif) => notif.recipient_id === followerId),
+            (followerId) => !recentRecipientIds.has(followerId),
           );
 
           if (followersToNotify.length === 0) {

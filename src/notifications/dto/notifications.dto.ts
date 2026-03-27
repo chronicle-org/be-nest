@@ -7,17 +7,20 @@ import {
   IsArray,
   IsBoolean,
   IsInt,
+  Max,
 } from "class-validator";
 import { NotificationType } from "../notification.entity";
 
 export class GetAllNotificationsForUserDto {
   @IsNumber()
   @Min(1)
+  @Max(100)
   @IsOptional()
   limit?: number;
 
   @IsNumber()
   @Min(1)
+  @Max(100)
   @IsOptional()
   page?: number;
 }

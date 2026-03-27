@@ -9,8 +9,8 @@ import {
   Put,
   Query,
   UseGuards,
+  Get,
 } from "@nestjs/common";
-import { Get } from "@nestjs/common";
 import {
   GetAllNotificationsForUserDto,
   // InsertNotificationDto,
@@ -29,7 +29,7 @@ export class NotificationController {
     private readonly notificationSettingService: NotificationSettingsService,
   ) {}
 
-  @Get("/")
+  @Get()
   @UseGuards(JwtAuthGuard)
   async getNotificationsForUser(
     @Query() queryDto: GetAllNotificationsForUserDto,

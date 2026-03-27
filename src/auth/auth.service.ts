@@ -52,6 +52,7 @@ export class AuthService {
         try {
           const defaultSettings = this.notificationSettingsRepo.create({
             ...baseDefaultSettingsValues,
+            notify_followed_posts_from_users: [],
             user_id: savedUser.id,
             created_at: now,
             user: savedUser,

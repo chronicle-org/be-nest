@@ -11,7 +11,6 @@ export const baseDefaultSettingsValues = {
   notify_bookmarks: true,
   notify_replies: true,
   notify_followed_posts_enabled: true,
-  notify_followed_posts_from_users: [],
 };
 @Injectable()
 export class NotificationSettingsService {
@@ -28,6 +27,7 @@ export class NotificationSettingsService {
     if (!settings) {
       settings = this.repo.create({
         ...baseDefaultSettingsValues,
+        notify_followed_posts_from_users: [],
         user_id: userId,
         created_at: new Date(),
       });
@@ -50,6 +50,7 @@ export class NotificationSettingsService {
         await this.repo.insert(
           missingUserIds.map((userId) => ({
             ...baseDefaultSettingsValues,
+            notify_followed_posts_from_users: [],
             user_id: userId,
             created_at: new Date(),
           })),

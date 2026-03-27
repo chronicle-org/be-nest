@@ -60,10 +60,6 @@ export class NotificationGateway
       if (!token) return null;
 
       const secret = this.configService.get<string>("JWT_SECRET") || "secret";
-      if (!secret) {
-        throw new Error("JWT_SECRET not configured");
-      }
-
       const payload = jwt.verify(token, secret) as JwtPayload;
       return payload.user_id;
     } catch (error) {
