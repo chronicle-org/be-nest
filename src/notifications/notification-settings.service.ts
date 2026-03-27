@@ -73,12 +73,14 @@ export class NotificationSettingsService {
     });
 
     if (!settings) {
-      return this.repo.save(
-        this.repo.create({
-          user_id: userId,
-          ...payload,
-        }),
-      );
+      const newSettings = this.repo.create({
+        ...baseDefaultSettingsValues,
+        notify_followed_posts_from_users: [],
+        user_id: userId,
+        created_at: new Date(),
+        ...payload,
+      });
+      return this.repo.save(newSettings);
     }
 
     Object.assign(settings, payload);

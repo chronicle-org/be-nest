@@ -15,7 +15,6 @@ import { NotificationGateway } from "src/notifications/notification.gateway";
 import { NotificationService } from "src/notifications/notification.service";
 import { NotificationSettingsService } from "src/notifications/notification-settings.service";
 import {
-  Notification,
   NotificationType,
 } from "src/notifications/notification.entity";
 
@@ -244,7 +243,6 @@ export class PostService {
       const user = await this.userRepo.findOneBy({ id: user_id });
       if (!post) throw new NotFoundException("Post not found");
       else if (!user) throw new NotFoundException("User not found");
-      let notification: Notification | null = null;
       switch (action_type) {
         case "like":
           post.likes = post.likes || [];
@@ -256,7 +254,7 @@ export class PostService {
           user.likes.push(post_id);
           user.likes_count++;
           if (post.user_id !== user_id) {
-            notification =
+            let notification =
               await this.notificationService.findRecentNotificationsForUser(
                 post.user_id,
                 user_id,
@@ -303,7 +301,7 @@ export class PostService {
           user.bookmarks.push(post_id);
           user.bookmarks_count++;
           if (post.user_id !== user_id) {
-            notification =
+            let notification =
               await this.notificationService.findRecentNotificationsForUser(
                 post.user_id,
                 user_id,

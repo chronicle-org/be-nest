@@ -68,7 +68,7 @@ export class CommentService {
             }
           } catch (error) {
             console.warn(
-              "Failed to create notification settings for user",
+              "Failed to create or deliver comment notification for user",
               post.user_id,
               error,
             );

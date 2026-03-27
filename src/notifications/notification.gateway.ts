@@ -14,6 +14,7 @@ import { Notification } from "./notification.entity";
 import { Server, Socket } from "socket.io";
 import * as jwt from "jsonwebtoken";
 import { cookieName, JwtPayload } from "src/auth/jwt.strategy";
+import { BadRequestException } from "@nestjs/common";
 
 const rawCorsOrigin = process.env.CORS_ORIGIN;
 const parsedCorsOrigins = rawCorsOrigin
@@ -21,10 +22,14 @@ const parsedCorsOrigins = rawCorsOrigin
       .split(",")
       .map((origin) => origin.trim())
       .filter((origin) => origin.length > 0)
-  : ["http://localhost:3000"];
+  : [];
 
 const websocketCorsOrigin =
-  parsedCorsOrigins.length === 1 ? parsedCorsOrigins[0] : parsedCorsOrigins;
+  parsedCorsOrigins.length === 0
+    ? []
+    : parsedCorsOrigins.length === 1
+      ? parsedCorsOrigins[0]
+      : parsedCorsOrigins;
 
 @WebSocketGateway({
   namespace: "notifications",
@@ -59,8 +64,15 @@ export class NotificationGateway
 
       if (!token) return null;
 
-      const secret = this.configService.get<string>("JWT_SECRET") || "secret";
-      const payload = jwt.verify(token, secret) as JwtPayload;
+      const secret = this.configService.get<string>("JWT_SECRET");
+      if (!secret) {
+        console.error("Auth error: JWT secret is not configured");
+        return null;
+      }
+
+      const payload = jwt.verify(token, secret, {
+        algorithms: ["HS256"],
+      }) as JwtPayload;
       return payload.user_id;
     } catch (error) {
       console.error("Auth error:", error);
@@ -112,7 +124,7 @@ export class NotificationGateway
     @ConnectedSocket() socket: Socket,
   ) {
     const userId = this.extractUserIdFromSocket(socket);
-    if (!userId) return;
+    if (!userId || !ids.length) throw new BadRequestException();
     const now = new Date();
     await this.repo.update(
       { id: In(ids), recipient_id: userId },
