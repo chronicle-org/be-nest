@@ -4,6 +4,15 @@ import { NotificationSettings } from "./notification-settings.entity";
 import { In, Repository } from "typeorm";
 import { UpdateNotificationSettingsDto } from "./dto/notifications.dto";
 
+export const baseDefaultSettingsValues = {
+  notify_comments: true,
+  notify_likes: true,
+  notify_follows: true,
+  notify_bookmarks: true,
+  notify_replies: true,
+  notify_followed_posts_enabled: true,
+  notify_followed_posts_from_users: [],
+};
 @Injectable()
 export class NotificationSettingsService {
   constructor(
@@ -18,14 +27,9 @@ export class NotificationSettingsService {
 
     if (!settings) {
       settings = this.repo.create({
+        ...baseDefaultSettingsValues,
         user_id: userId,
-        notify_comments: true,
-        notify_likes: true,
-        notify_follows: true,
-        notify_bookmarks: true,
-        notify_replies: true,
-        notify_followed_posts_enabled: true,
-        notify_followed_posts_from_users: [],
+        created_at: new Date(),
       });
       await this.repo.save(settings);
     }
@@ -45,14 +49,9 @@ export class NotificationSettingsService {
       try {
         await this.repo.insert(
           missingUserIds.map((userId) => ({
+            ...baseDefaultSettingsValues,
             user_id: userId,
-            notify_comments: true,
-            notify_likes: true,
-            notify_follows: true,
-            notify_bookmarks: true,
-            notify_replies: true,
-            notify_followed_posts_enabled: true,
-            notify_followed_posts_from_users: [],
+            created_at: new Date(),
           })),
         );
       } catch (error) {

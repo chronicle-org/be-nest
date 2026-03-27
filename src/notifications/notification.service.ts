@@ -75,35 +75,24 @@ export class NotificationService {
   }
 
   async createNotificationBulk(payload: InsertNotificationDto[]) {
+    let notifications: Notification[];
     try {
-      await this.repo.insert(payload);
+      if (payload.length === 0) throw new Error("Payload array is empty");
+      const insertResult = await this.repo
+        .createQueryBuilder()
+        .insert()
+        .values(payload)
+        .returning("*")
+        .execute();
+
+      // In Postgres, `raw` contains the rows returned by `RETURNING *`
+      notifications = insertResult.raw as Notification[];
     } catch (error) {
       console.error("Error inserting notifications in bulk", error);
       throw error;
     }
 
-    const notifications = await this.repo
-      .createQueryBuilder()
-      .select()
-      .where({ recipient_id: In(payload.map((p) => p.recipient_id)) })
-      .andWhere({ actor_id: payload[0].actor_id })
-      .andWhere({ type: payload[0].type })
-      .andWhere({ deleted: false })
-      .andWhere("created_at BETWEEN :since AND :now", {
-        since: new Date(Date.now() - 10 * 60 * 1000),
-        now: new Date(),
-      })
-      .orderBy("created_at", "DESC")
-      .getMany();
-
-    // Deduplicate by recipient_id, keeping the most recent (first due to DESC order)
-    const dedupedMap = new Map<number, Notification>();
-    for (const notification of notifications) {
-      if (!dedupedMap.has(notification.recipient_id)) {
-        dedupedMap.set(notification.recipient_id, notification);
-      }
-    }
-    return Array.from(dedupedMap.values());
+    return notifications;
   }
 
   async deleteNotification(notificationId: number, userId: number) {

@@ -84,17 +84,27 @@ export class UserService {
       );
 
     if (!existNotif) {
-      const settings =
-        await this.notificationSettingsService.getUserSettings(followee_id);
+      void (async () => {
+        try {
+          const settings =
+            await this.notificationSettingsService.getUserSettings(followee_id);
 
-      if (settings?.notify_follows !== false) {
-        const notif = await this.notificationService.createNotification({
-          recipient_id: followee_id,
-          actor_id: follower_id,
-          type: NotificationType.FOLLOW,
-        });
-        this.notificationGateway.sendNotificationToUser(followee_id, notif);
-      }
+          if (settings?.notify_follows !== false) {
+            const notif = await this.notificationService.createNotification({
+              recipient_id: followee_id,
+              actor_id: follower_id,
+              type: NotificationType.FOLLOW,
+            });
+            this.notificationGateway.sendNotificationToUser(followee_id, notif);
+          }
+        } catch (error) {
+          console.warn(
+            "Failed to create notification for follow action",
+            followee_id,
+            error,
+          );
+        }
+      })();
     }
 
     return follower;

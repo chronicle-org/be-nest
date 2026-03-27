@@ -15,10 +15,21 @@ import { Server, Socket } from "socket.io";
 import * as jwt from "jsonwebtoken";
 import { cookieName, JwtPayload } from "src/auth/jwt.strategy";
 
+const rawCorsOrigin = process.env.CORS_ORIGIN;
+const parsedCorsOrigins = rawCorsOrigin
+  ? rawCorsOrigin
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0)
+  : ["http://localhost:3000"];
+
+const websocketCorsOrigin =
+  parsedCorsOrigins.length === 1 ? parsedCorsOrigins[0] : parsedCorsOrigins;
+
 @WebSocketGateway({
   namespace: "notifications",
   cors: {
-    origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+    origin: websocketCorsOrigin,
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -41,13 +52,14 @@ export class NotificationGateway
       const cookies = socket.handshake.headers.cookie || "";
 
       const token = cookies
-        .split("; ")
+        .split(";")
+        .map((c) => c.trim())
         .find((c) => c.startsWith(cookieName + "="))
         ?.split("=")[1];
 
       if (!token) return null;
 
-      const secret = this.configService.get<string>("JWT_SECRET");
+      const secret = this.configService.get<string>("JWT_SECRET") || "secret";
       if (!secret) {
         throw new Error("JWT_SECRET not configured");
       }
@@ -100,7 +112,7 @@ export class NotificationGateway
 
   @SubscribeMessage("acknowledge-all")
   async handleAcknowledgeAll(
-    @MessageBody() ids: number[],
+    @MessageBody() ids: number[] = [],
     @ConnectedSocket() socket: Socket,
   ) {
     const userId = this.extractUserIdFromSocket(socket);

@@ -73,7 +73,7 @@ export class NotificationController {
   @Put("/read")
   @UseGuards(JwtAuthGuard)
   async markAsRead(
-    @Body("ids") ids: number[],
+    @Body("ids") ids: number[] = [],
     @CurrentUser() user: JwtPayload,
   ) {
     if (ids.length === 0) {

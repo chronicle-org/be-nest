@@ -56,7 +56,6 @@ export class PostService {
     if (!savedPost.is_draft) {
       const author = await this.userRepo.findOne({
         where: { id: savedPost.user_id },
-        relations: ["followers"],
       });
       if (author) {
         savedPost.user = author;
@@ -378,8 +377,9 @@ export class PostService {
 
         const followers = post.user.followers;
 
-        // for (const followerId of followers) {
-        // }
+        if (followers.length === 0) {
+          return;
+        }
         try {
           const followersSettings =
             await this.notificationSettingsService.getUserSettingsBulk(
@@ -396,6 +396,9 @@ export class PostService {
             )
             .map((setting) => setting.user_id);
 
+          if (followersFollowedPostsEnabled.length === 0) {
+            return;
+          }
           const recent =
             await this.notificationService.findRecentNotificationsForUserBulk(
               followersFollowedPostsEnabled,
@@ -407,6 +410,10 @@ export class PostService {
             (followerId) =>
               !recent.some((notif) => notif.recipient_id === followerId),
           );
+
+          if (followersToNotify.length === 0) {
+            return;
+          }
 
           const notifications =
             await this.notificationService.createNotificationBulk(

@@ -47,21 +47,33 @@ export class CommentService {
           3,
         );
       if (!existingNotification) {
-        const postOwnerSettings =
-          await this.notificationSettingsService.getUserSettings(post.user_id);
-        if (postOwnerSettings?.notify_comments !== false) {
-          const notification =
-            await this.notificationService.createNotification({
-              recipient_id: post.user_id,
-              actor_id: data.user_id,
-              type: NotificationType.COMMENT,
-              post_id: data.post_id,
-            });
-          this.notificationGateway.sendNotificationToUser(
-            post.user_id,
-            notification,
-          );
-        }
+        void (async () => {
+          try {
+            const postOwnerSettings =
+              await this.notificationSettingsService.getUserSettings(
+                post.user_id,
+              );
+            if (postOwnerSettings?.notify_comments !== false && data.user_id) {
+              const notification =
+                await this.notificationService.createNotification({
+                  recipient_id: post.user_id,
+                  actor_id: data.user_id,
+                  type: NotificationType.COMMENT,
+                  post_id: data.post_id,
+                });
+              this.notificationGateway.sendNotificationToUser(
+                post.user_id,
+                notification,
+              );
+            }
+          } catch (error) {
+            console.warn(
+              "Failed to create notification settings for user",
+              post.user_id,
+              error,
+            );
+          }
+        });
       }
     }
 

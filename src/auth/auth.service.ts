@@ -12,6 +12,7 @@ import { JwtService } from "@nestjs/jwt";
 import { JwtPayload } from "./jwt.strategy";
 import { generateHandle } from "src/utils";
 import { NotificationSettings } from "../notifications/notification-settings.entity";
+import { baseDefaultSettingsValues } from "src/notifications/notification-settings.service";
 
 export type TRegisterData = {
   name: string;
@@ -47,18 +48,23 @@ export class AuthService {
       const savedUser = await this.repo.save(user);
       const { password_hash: _, ...rest } = savedUser;
 
-      const defaultSettings = this.notificationSettingsRepo.create({
-        notify_bookmarks: true,
-        notify_comments: true,
-        notify_follows: true,
-        notify_likes: true,
-        notify_replies: true,
-        notify_followed_posts_enabled: true,
-        user_id: savedUser.id,
-        created_at: now,
-        user: savedUser,
-      });
-      await this.notificationSettingsRepo.save(defaultSettings);
+      void (async () => {
+        try {
+          const defaultSettings = this.notificationSettingsRepo.create({
+            ...baseDefaultSettingsValues,
+            user_id: savedUser.id,
+            created_at: now,
+            user: savedUser,
+          });
+          await this.notificationSettingsRepo.save(defaultSettings);
+        } catch (error) {
+          console.warn(
+            "Failed to create notification settings for user",
+            savedUser.id,
+            error,
+          );
+        }
+      })();
 
       return rest;
     } catch (error) {
