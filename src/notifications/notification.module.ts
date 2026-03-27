@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { ConfigModule } from "@nestjs/config";
 import { NotificationGateway } from "./notification.gateway";
 import { Notification } from "./notification.entity";
 import { NotificationSettings } from "./notification-settings.entity";
@@ -10,6 +11,7 @@ import { NotificationController } from "./notification.controller";
 
 @Module({
   imports: [
+    ConfigModule,
     TypeOrmModule.forFeature([Notification, NotificationSettings, User]),
   ],
   controllers: [NotificationController],
