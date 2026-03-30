@@ -31,7 +31,7 @@ export class NotificationSettingsService {
         user_id: userId,
         created_at: new Date(),
       });
-      await this.repo.save(settings);
+      await this.repo.upsert(settings, ["user_id"]);
     }
 
     return settings;

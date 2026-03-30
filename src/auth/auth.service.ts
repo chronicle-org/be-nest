@@ -57,7 +57,9 @@ export class AuthService {
             created_at: now,
             user: savedUser,
           });
-          await this.notificationSettingsRepo.save(defaultSettings);
+          await this.notificationSettingsRepo.upsert(defaultSettings, {
+            conflictPaths: ["user_id"],
+          });
         } catch (error) {
           console.warn(
             "Failed to create notification settings for user",

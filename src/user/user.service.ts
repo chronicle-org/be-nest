@@ -77,33 +77,46 @@ export class UserService {
     await this.repo.save(followee);
 
     void (async () => {
-      const existNotif =
-        await this.notificationService.findRecentNotificationsForUser(
-          followee_id,
-          follower_id,
-          NotificationType.FOLLOW,
-        );
-
-      if (!existNotif) {
-        try {
-          const settings =
-            await this.notificationSettingsService.getUserSettings(followee_id);
-
-          if (settings?.notify_follows !== false) {
-            const notif = await this.notificationService.createNotification({
-              recipient_id: followee_id,
-              actor_id: follower_id,
-              type: NotificationType.FOLLOW,
-            });
-            this.notificationGateway.sendNotificationToUser(followee_id, notif);
-          }
-        } catch (error) {
-          console.warn(
-            "Failed to create notification for follow action",
+      try {
+        const existNotif =
+          await this.notificationService.findRecentNotificationsForUser(
             followee_id,
-            error,
+            follower_id,
+            NotificationType.FOLLOW,
           );
+
+        if (!existNotif) {
+          try {
+            const settings =
+              await this.notificationSettingsService.getUserSettings(
+                followee_id,
+              );
+
+            if (settings?.notify_follows !== false) {
+              const notif = await this.notificationService.createNotification({
+                recipient_id: followee_id,
+                actor_id: follower_id,
+                type: NotificationType.FOLLOW,
+              });
+              this.notificationGateway.sendNotificationToUser(
+                followee_id,
+                notif,
+              );
+            }
+          } catch (error) {
+            console.warn(
+              "Failed to create notification for follow action",
+              followee_id,
+              error,
+            );
+          }
         }
+      } catch (error) {
+        console.warn(
+          "Failed to check recent notifications for follow action",
+          followee_id,
+          error,
+        );
       }
     })();
 

@@ -17,22 +17,37 @@ import * as jwt from "jsonwebtoken";
 import { cookieName, JwtPayload } from "src/auth/jwt.strategy";
 import { parse as parseCookies } from "cookie";
 
-const rawCorsOrigin = process.env.CORS_ORIGIN;
-const parsedCorsOrigins = rawCorsOrigin
-  ? rawCorsOrigin
-      .split(",")
-      .map((origin) => origin.trim())
-      .filter((origin) => origin.length > 0)
-  : [];
+const parseCorsOrigins = (): string[] => {
+  const rawCorsOrigin = process.env.CORS_ORIGIN;
+  return rawCorsOrigin
+    ? rawCorsOrigin
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter((origin) => origin.length > 0)
+    : [];
+};
 
-const websocketCorsOrigin =
-  parsedCorsOrigins.length === 0
-    ? []
-    : parsedCorsOrigins.length === 1
-      ? parsedCorsOrigins[0]
-      : parsedCorsOrigins;
+const websocketCorsOrigin = (
+  origin: string | undefined,
+  callback: (err: Error | null, allow?: boolean) => void,
+): void => {
+  const allowedOrigins = parseCorsOrigins();
 
-type SocketData = Map<string, number | undefined>;
+  // If no origins are configured, reject all origins (equivalent to empty array config)
+  if (allowedOrigins.length === 0) {
+    return callback(new Error("Not allowed by CORS"));
+  }
+
+  if (origin && allowedOrigins.includes(origin)) {
+    return callback(null, true);
+  }
+
+  return callback(new Error("Not allowed by CORS"));
+};
+
+interface SocketData {
+  userId?: number;
+}
 
 @WebSocketGateway({
   namespace: "notifications",
@@ -90,7 +105,7 @@ export class NotificationGateway
   }
 
   handleDisconnect(socket: Socket) {
-    const userId = (socket.data as SocketData)["userId"] as number | undefined;
+    const userId = (socket.data as SocketData)["userId"];
     if (!userId) return;
     const sockets = this.userSockets.get(userId);
     if (sockets) {
@@ -106,7 +121,7 @@ export class NotificationGateway
     @MessageBody() id: number,
     @ConnectedSocket() socket: Socket,
   ) {
-    const userId = (socket.data as SocketData)["userId"] as number | undefined;
+    const userId = (socket.data as SocketData)["userId"];
     if (!userId) return;
     await this.repo.update(
       { id, recipient_id: userId },
@@ -119,7 +134,7 @@ export class NotificationGateway
     @MessageBody() ids: number[] = [],
     @ConnectedSocket() socket: Socket,
   ) {
-    const userId = (socket.data as SocketData)["userId"] as number | undefined;
+    const userId = (socket.data as SocketData)["userId"];
     if (!userId || !ids.length) throw new WsException("Invalid request");
     const now = new Date();
     await this.repo.update(
