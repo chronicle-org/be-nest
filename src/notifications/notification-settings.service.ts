@@ -56,13 +56,22 @@ export class NotificationSettingsService {
             created_at: new Date(),
           })),
         );
+        const newlyInserted = await this.repo.find({
+          where: { user_id: In(missingUserIds) },
+        });
+        settings = settings.concat(newlyInserted);
       } catch (error) {
         console.warn("Failed to insert missing notification settings", error);
+        const fallbackSettings = missingUserIds.map((userId) =>
+          this.repo.create({
+            ...baseDefaultSettingsValues,
+            notify_followed_posts_from_users: [],
+            user_id: userId,
+            created_at: new Date(),
+          }),
+        );
+        settings = settings.concat(fallbackSettings);
       }
-      const newlyInserted = await this.repo.find({
-        where: { user_id: In(missingUserIds) },
-      });
-      settings = settings.concat(newlyInserted);
     }
 
     return settings;

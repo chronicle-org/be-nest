@@ -32,6 +32,8 @@ const websocketCorsOrigin =
       ? parsedCorsOrigins[0]
       : parsedCorsOrigins;
 
+type SocketData = Map<string, number | undefined>;
+
 @WebSocketGateway({
   namespace: "notifications",
   cors: {
@@ -79,6 +81,7 @@ export class NotificationGateway
       socket.disconnect();
       return;
     }
+    (socket.data as SocketData)["userId"] = userId;
     await socket.join(`user:${userId}`);
     if (!this.userSockets.has(userId)) {
       this.userSockets.set(userId, new Set());
@@ -87,13 +90,13 @@ export class NotificationGateway
   }
 
   handleDisconnect(socket: Socket) {
-    for (const [userId, sockets] of this.userSockets) {
-      if (sockets.has(socket.id)) {
-        sockets.delete(socket.id);
-        if (sockets.size === 0) {
-          this.userSockets.delete(userId);
-        }
-        break;
+    const userId = (socket.data as SocketData)["userId"] as number | undefined;
+    if (!userId) return;
+    const sockets = this.userSockets.get(userId);
+    if (sockets) {
+      sockets.delete(socket.id);
+      if (sockets.size === 0) {
+        this.userSockets.delete(userId);
       }
     }
   }
@@ -103,7 +106,7 @@ export class NotificationGateway
     @MessageBody() id: number,
     @ConnectedSocket() socket: Socket,
   ) {
-    const userId = this.extractUserIdFromSocket(socket);
+    const userId = (socket.data as SocketData)["userId"] as number | undefined;
     if (!userId) return;
     await this.repo.update(
       { id, recipient_id: userId },
@@ -116,7 +119,7 @@ export class NotificationGateway
     @MessageBody() ids: number[] = [],
     @ConnectedSocket() socket: Socket,
   ) {
-    const userId = this.extractUserIdFromSocket(socket);
+    const userId = (socket.data as SocketData)["userId"] as number | undefined;
     if (!userId || !ids.length) throw new WsException("Invalid request");
     const now = new Date();
     await this.repo.update(

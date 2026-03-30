@@ -79,23 +79,25 @@ export class CommentService {
       updated_at: new Date(),
     };
 
-    const savedComment = await this.repo.save(commentData, { reload: true });
+    const savedComment = await this.repo.save(commentData, {
+      reload: true,
+    });
     await this.postRepo.increment({ id: data.post_id }, "comment_count", 1);
 
-    // Comment creation is now atomic and complete
-    // Notifications are fire-and-forget and won't block the response
-    const post = savedComment.post;
-    if (post && post.user_id !== data.user_id && data.user_id) {
-      this.runAsync(
-        () =>
-          this.sendCommentNotification(
-            post.user_id,
-            data.user_id as number,
-            data.post_id as number,
-          ),
-        `Failed to send comment notification for user ${post.user_id}`,
-      );
-    }
+    this.runAsync(async () => {
+      const post = await this.postRepo.findOneBy({ id: data.post_id });
+      if (post && post.user_id !== data.user_id && data.user_id) {
+        this.runAsync(
+          () =>
+            this.sendCommentNotification(
+              post.user_id,
+              data.user_id as number,
+              data.post_id as number,
+            ),
+          `Failed to send comment notification for user ${post.user_id}`,
+        );
+      }
+    }, `Failed to process comment notification for post ${data.post_id}`);
 
     return savedComment;
   }
