@@ -11,10 +11,22 @@ import { Post } from "./post.entity";
 import { InteractionType } from "src/utils/types";
 import { User } from "src/user/user.entity";
 import { calculateReadingTime } from "src/utils";
+import { NotificationGateway } from "src/notifications/notification.gateway";
+import { NotificationService } from "src/notifications/notification.service";
+import { NotificationSettingsService } from "src/notifications/notification-settings.service";
+import { NotificationType } from "src/notifications/notification.entity";
 
 export interface PagedResult {
   data: Post[];
   total: number;
+}
+
+interface InteractionHandlers {
+  [key: string]: (
+    post: Post,
+    user: User,
+    user_id: number,
+  ) => void | Promise<void>;
 }
 
 @Injectable()
@@ -24,7 +36,173 @@ export class PostService {
     private repo: Repository<Post>,
     @InjectRepository(User)
     private userRepo: Repository<User>,
+    private notificationGateway: NotificationGateway,
+    private notificationService: NotificationService,
+    private notificationSettingsService: NotificationSettingsService,
   ) {}
+
+  /**
+   * Build search conditions for post queries
+   */
+  private buildSearchConditions(
+    search: string,
+    baseCondition?: Record<string, any>,
+  ): Record<string, FindOperator<string> | boolean | number>[] {
+    const searchTerms = search.split(/\s+/).filter((term) => term.length > 0);
+    const base = baseCondition || {};
+
+    if (searchTerms.length === 0) {
+      return [base];
+    }
+
+    const conditions = [
+      { ...base, title: ILike(`%${search}%`) },
+      { ...base, sub_title: ILike(`%${search}%`) },
+      ...searchTerms.map((term) => ({ ...base, tags: ILike(`%${term}%`) })),
+    ];
+
+    return conditions;
+  }
+
+  /**
+   * Execute async task in background without blocking response
+   */
+  private runAsync(task: () => Promise<void>, errorContext: string): void {
+    void task().catch((err) => {
+      console.error(`${errorContext}:`, err);
+    });
+  }
+
+  /**
+   * Send notification for post interaction (like/bookmark)
+   */
+  private async sendInteractionNotification(
+    recipient_id: number,
+    actor_id: number,
+    type: NotificationType,
+    post_id: number,
+    settingKey: "notify_likes" | "notify_bookmarks",
+  ): Promise<void> {
+    let notification =
+      await this.notificationService.findRecentNotificationsForUser(
+        recipient_id,
+        actor_id,
+        type,
+      );
+
+    if (!notification) {
+      const settings =
+        await this.notificationSettingsService.getUserSettings(recipient_id);
+      if (settings?.[settingKey] !== false) {
+        notification = await this.notificationService.createNotification({
+          recipient_id,
+          actor_id,
+          type,
+          post_id,
+        });
+        this.notificationGateway.sendNotificationToUser(
+          recipient_id,
+          notification,
+        );
+      }
+    }
+  }
+
+  /**
+   * Handle post like interaction
+   */
+  private handleLike(post: Post, user: User, actor_id: number): void {
+    post.likes = post.likes || [];
+    user.likes = user.likes || [];
+
+    if (post.likes.includes(actor_id)) {
+      throw new BadRequestException("User already liked this post");
+    }
+
+    post.likes.push(actor_id);
+    post.likes_count++;
+    user.likes.push(post.id);
+    user.likes_count++;
+
+    if (post.user_id !== actor_id) {
+      this.runAsync(
+        () =>
+          this.sendInteractionNotification(
+            post.user_id,
+            actor_id,
+            NotificationType.LIKE,
+            post.id,
+            "notify_likes",
+          ),
+        `Failed to create like notification for user ${post.user_id}`,
+      );
+    }
+  }
+
+  /**
+   * Handle post unlike interaction
+   */
+  private handleUnlike(post: Post, user: User, actor_id: number): void {
+    post.likes = post.likes || [];
+    user.likes = user.likes || [];
+
+    if (!post.likes.includes(actor_id)) {
+      throw new BadRequestException("User has not liked this post");
+    }
+
+    post.likes = post.likes.filter((id) => id !== actor_id);
+    post.likes_count--;
+    user.likes = user.likes.filter((id) => id !== post.id);
+    user.likes_count--;
+  }
+
+  /**
+   * Handle post bookmark interaction
+   */
+  private handleBookmark(post: Post, user: User, actor_id: number): void {
+    post.bookmarks = post.bookmarks || [];
+    user.bookmarks = user.bookmarks || [];
+
+    if (post.bookmarks.includes(actor_id)) {
+      throw new BadRequestException("User already bookmarked this post");
+    }
+
+    post.bookmarks.push(actor_id);
+    post.bookmarks_count++;
+    user.bookmarks.push(post.id);
+    user.bookmarks_count++;
+
+    if (post.user_id !== actor_id) {
+      this.runAsync(
+        () =>
+          this.sendInteractionNotification(
+            post.user_id,
+            actor_id,
+            NotificationType.BOOKMARK,
+            post.id,
+            "notify_bookmarks",
+          ),
+        `Failed to create bookmark notification for user ${post.user_id}`,
+      );
+    }
+  }
+
+  /**
+   * Handle post unbookmark interaction
+   */
+  private handleUnbookmark(post: Post, user: User, actor_id: number): void {
+    post.bookmarks = post.bookmarks || [];
+    user.bookmarks = user.bookmarks || [];
+
+    if (!post.bookmarks.includes(actor_id)) {
+      throw new BadRequestException("User has not bookmarked this post");
+    }
+
+    post.bookmarks = post.bookmarks.filter((id) => id !== actor_id);
+    post.bookmarks_count--;
+    user.bookmarks = user.bookmarks.filter((id) => id !== post.id);
+    user.bookmarks_count--;
+  }
 
   async create(data: Partial<Post>): Promise<Post> {
     const readingTime = data.content ? calculateReadingTime(data.content) : 0;
@@ -42,6 +220,17 @@ export class PostService {
     };
 
     const savedPost = await this.repo.save(postData);
+
+    if (!savedPost.is_draft) {
+      const author = await this.userRepo.findOne({
+        where: { id: savedPost.user_id },
+      });
+      if (author) {
+        savedPost.user = author;
+        this.sendFollowerNotifications(savedPost);
+      }
+    }
+
     return savedPost;
   }
 
@@ -83,22 +272,9 @@ export class PostService {
     search: string = "",
   ): Promise<PagedResult> {
     const skip = (page - 1) * limit;
-    const searchTerms = search.split(/\s+/).filter((term) => term.length > 0);
-
-    let searchConditions: Record<string, FindOperator<string> | boolean>[] = [];
-
-    if (searchTerms.length > 0) {
-      searchConditions = [
-        { title: ILike(`%${search}%`), is_draft: false },
-        { sub_title: ILike(`%${search}%`), is_draft: false },
-        ...searchTerms.map((term) => ({
-          tags: ILike(`%${term}%`),
-          is_draft: false,
-        })),
-      ];
-    } else {
-      searchConditions = [{ is_draft: false }];
-    }
+    const searchConditions = this.buildSearchConditions(search, {
+      is_draft: false,
+    });
 
     const [data, total] = await this.repo.findAndCount({
       where: searchConditions,
@@ -118,24 +294,7 @@ export class PostService {
     search: string = "",
   ): Promise<PagedResult> {
     const skip = (page - 1) * limit;
-
-    const baseCondition = { user_id };
-
-    let searchConditions: Record<string, FindOperator<string> | number>[] = [];
-    const searchTerms = search.split(/\s+/).filter((term) => term.length > 0);
-
-    if (searchTerms.length > 0) {
-      searchConditions = [
-        { ...baseCondition, title: ILike(`%${search}%`) },
-        { ...baseCondition, sub_title: ILike(`%${search}%`) },
-      ];
-
-      for (const term of searchTerms) {
-        searchConditions.push({ ...baseCondition, tags: ILike(`%${term}%`) });
-      }
-    } else {
-      searchConditions = [{ ...baseCondition }];
-    }
+    const searchConditions = this.buildSearchConditions(search, { user_id });
 
     const [data, total] = await this.repo.findAndCount({
       where: searchConditions,
@@ -219,57 +378,39 @@ export class PostService {
     user_id: number,
   ): Promise<{ post: Post; user: User } | null> {
     try {
-      const post = await this.repo.findOneBy({ id: post_id });
-      const user = await this.userRepo.findOneBy({ id: user_id });
+      const [post, user] = await Promise.all([
+        this.repo.findOneBy({ id: post_id }),
+        this.userRepo.findOneBy({ id: user_id }),
+      ]);
+
       if (!post) throw new NotFoundException("Post not found");
-      else if (!user) throw new NotFoundException("User not found");
-      switch (action_type) {
-        case "like":
-          post.likes = post.likes || [];
-          user.likes = user.likes || [];
-          if (post.likes.includes(user_id))
-            throw new BadRequestException("User already liked this post");
-          post.likes.push(user_id);
-          post.likes_count++;
-          user.likes.push(post_id);
-          user.likes_count++;
-          break;
-        case "unlike":
-          post.likes = post.likes || [];
-          user.likes = user.likes || [];
-          if (!post.likes.includes(user_id))
-            throw new BadRequestException("User has not liked this post");
-          post.likes = post.likes.filter((id) => id !== user_id);
-          post.likes_count--;
-          user.likes = user.likes.filter((id) => id !== post_id);
-          user.likes_count--;
-          break;
-        case "bookmark":
-          post.bookmarks = post.bookmarks || [];
-          user.bookmarks = user.bookmarks || [];
-          if (post.bookmarks.includes(user_id))
-            throw new BadRequestException("User already bookmarked this post");
-          post.bookmarks.push(user_id);
-          post.bookmarks_count++;
-          user.bookmarks.push(post_id);
-          user.bookmarks_count++;
-          break;
-        case "unbookmark":
-          post.bookmarks = post.bookmarks || [];
-          user.bookmarks = user.bookmarks || [];
-          if (!post.bookmarks.includes(user_id))
-            throw new BadRequestException("User has not bookmarked this post");
-          post.bookmarks = post.bookmarks.filter((id) => id !== user_id);
-          post.bookmarks_count--;
-          user.bookmarks = user.bookmarks.filter((id) => id !== post_id);
-          user.bookmarks_count--;
-          break;
+      if (!user) throw new NotFoundException("User not found");
+
+      const handlers: InteractionHandlers = {
+        like: (p, u, uid) => this.handleLike(p, u, uid),
+        unlike: (p, u, uid) => this.handleUnlike(p, u, uid),
+        bookmark: (p, u, uid) => this.handleBookmark(p, u, uid),
+        unbookmark: (p, u, uid) => this.handleUnbookmark(p, u, uid),
+      };
+
+      const handler = handlers[action_type];
+      if (!handler) {
+        throw new BadRequestException(`Invalid action type: ${action_type}`);
       }
-      await this.repo.save(post);
-      await this.userRepo.save(user);
+
+      await handler(post, user, user_id);
+
+      await Promise.all([this.repo.save(post), this.userRepo.save(user)]);
+
       return { post, user };
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException ||
+        error instanceof UnauthorizedException
+      ) {
+        throw error;
+      }
       throw new InternalServerErrorException("Error interacting with post");
     }
   }
@@ -289,5 +430,60 @@ export class PostService {
       if (error instanceof NotFoundException) throw error;
       throw new InternalServerErrorException(`Error ${action} post`);
     }
+  }
+
+  private sendFollowerNotifications(post: Post): void {
+    this.runAsync(async () => {
+      if (!post?.user?.followers || post.user.followers.length === 0) {
+        return;
+      }
+
+      const followerIds = post.user.followers;
+      const settings =
+        await this.notificationSettingsService.getUserSettingsBulk(followerIds);
+
+      // Filter followers who have enabled post notifications
+      const eligibleFollowers = settings
+        .filter(
+          (setting) =>
+            setting.notify_followed_posts_enabled &&
+            (!setting.notify_followed_posts_from_users.length ||
+              setting.notify_followed_posts_from_users.includes(post.user_id)),
+        )
+        .map((setting) => setting.user_id);
+
+      if (eligibleFollowers.length === 0) return;
+
+      // Find recent notifications to avoid duplicates
+      const recentNotifications =
+        await this.notificationService.findRecentNotificationsForUserBulk(
+          eligibleFollowers,
+          post.user_id,
+          NotificationType.POST,
+        );
+
+      const notifiedFollowerIds = new Set(
+        recentNotifications.map((notif) => notif.recipient_id),
+      );
+
+      const followersToNotify = eligibleFollowers.filter(
+        (followerId) => !notifiedFollowerIds.has(followerId),
+      );
+
+      if (followersToNotify.length === 0) return;
+
+      // Create and send notifications in one step
+      const notifications =
+        await this.notificationService.createNotificationBulk(
+          followersToNotify.map((followerId) => ({
+            recipient_id: followerId,
+            actor_id: post.user_id,
+            type: NotificationType.POST,
+            post_id: post.id,
+          })),
+        );
+
+      this.notificationGateway.sendNotificationToUserBulk(notifications);
+    }, "Failed to send follower notifications");
   }
 }

@@ -1,0 +1,50 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  JoinColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  OneToOne,
+} from "typeorm";
+import { User } from "src/user/user.entity";
+
+@Entity()
+export class NotificationSettings {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column({ unique: true })
+  user_id: number;
+
+  @Column({ default: true })
+  notify_comments: boolean;
+
+  @Column({ default: true })
+  notify_likes: boolean;
+
+  @Column({ default: true })
+  notify_follows: boolean;
+
+  @Column({ default: true })
+  notify_bookmarks: boolean;
+
+  @Column({ default: true })
+  notify_replies: boolean;
+
+  @Column({ default: true })
+  notify_followed_posts_enabled: boolean;
+
+  @Column({ type: "jsonb", default: [] })
+  notify_followed_posts_from_users: number[];
+
+  @CreateDateColumn()
+  created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
+
+  @OneToOne(() => User)
+  @JoinColumn({ name: "user_id" })
+  user: User;
+}

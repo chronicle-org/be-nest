@@ -8,6 +8,10 @@ import { Comment } from "./comment.entity";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Post as PostEntity } from "src/post/post.entity";
+import { NotificationService } from "src/notifications/notification.service";
+import { NotificationSettingsService } from "src/notifications/notification-settings.service";
+import { NotificationGateway } from "src/notifications/notification.gateway";
+import { NotificationType } from "src/notifications/notification.entity";
 
 @Injectable()
 export class CommentService {
@@ -16,7 +20,55 @@ export class CommentService {
     private repo: Repository<Comment>,
     @InjectRepository(PostEntity)
     private postRepo: Repository<PostEntity>,
+    private notificationService: NotificationService,
+    private notificationSettingsService: NotificationSettingsService,
+    private notificationGateway: NotificationGateway,
   ) {}
+
+  /**
+   * Execute async task in background without blocking response
+   */
+  private runAsync(task: () => Promise<void>, errorContext: string): void {
+    void task().catch((err) => {
+      console.error(`${errorContext}:`, err);
+    });
+  }
+
+  /**
+   * Send notification for new comment
+   */
+  private async sendCommentNotification(
+    recipient_id: number,
+    actor_id: number,
+    post_id: number,
+  ): Promise<void> {
+    const existingNotification =
+      await this.notificationService.findRecentNotificationsForUser(
+        recipient_id,
+        actor_id,
+        NotificationType.COMMENT,
+        3,
+      );
+
+    if (!existingNotification) {
+      const settings =
+        await this.notificationSettingsService.getUserSettings(recipient_id);
+
+      if (settings?.notify_comments !== false) {
+        const notification = await this.notificationService.createNotification({
+          recipient_id,
+          actor_id,
+          type: NotificationType.COMMENT,
+          post_id,
+        });
+
+        this.notificationGateway.sendNotificationToUser(
+          recipient_id,
+          notification,
+        );
+      }
+    }
+  }
 
   async create(data: Partial<Comment>): Promise<Comment> {
     const commentData: Partial<Comment> = {
@@ -27,8 +79,26 @@ export class CommentService {
       updated_at: new Date(),
     };
 
-    const savedComment = await this.repo.save(commentData);
+    const savedComment = await this.repo.save(commentData, {
+      reload: true,
+    });
     await this.postRepo.increment({ id: data.post_id }, "comment_count", 1);
+
+    this.runAsync(async () => {
+      const post = await this.postRepo.findOneBy({ id: data.post_id });
+      if (post && post.user_id !== data.user_id && data.user_id) {
+        this.runAsync(
+          () =>
+            this.sendCommentNotification(
+              post.user_id,
+              data.user_id as number,
+              data.post_id as number,
+            ),
+          `Failed to send comment notification for user ${post.user_id}`,
+        );
+      }
+    }, `Failed to process comment notification for post ${data.post_id}`);
+
     return savedComment;
   }
 

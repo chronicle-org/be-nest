@@ -4,9 +4,13 @@ import { Comment } from "./comment.entity";
 import { Post as PostEntity } from "src/post/post.entity";
 import { CommentController } from "./comment.controller";
 import { CommentService } from "./comment.service";
+import { NotificationModule } from "src/notifications/notification.module";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Comment, PostEntity])],
+  imports: [
+    TypeOrmModule.forFeature([Comment, PostEntity]),
+    NotificationModule,
+  ],
   controllers: [CommentController],
   providers: [CommentService],
 })

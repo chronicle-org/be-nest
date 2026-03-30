@@ -7,6 +7,10 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { In, Repository } from "typeorm";
 import { User } from "./user.entity";
 import { Post } from "../post/post.entity";
+import { NotificationService } from "src/notifications/notification.service";
+import { NotificationSettingsService } from "src/notifications/notification-settings.service";
+import { NotificationGateway } from "src/notifications/notification.gateway";
+import { NotificationType } from "src/notifications/notification.entity";
 
 @Injectable()
 export class UserService {
@@ -15,6 +19,9 @@ export class UserService {
     private repo: Repository<User>,
     @InjectRepository(Post)
     private postRepo: Repository<Post>,
+    private notificationService: NotificationService,
+    private notificationSettingsService: NotificationSettingsService,
+    private notificationGateway: NotificationGateway,
   ) {}
 
   create(data: Partial<User>): Promise<User> {
@@ -68,6 +75,51 @@ export class UserService {
     followee.followers_count++;
     await this.repo.save(follower);
     await this.repo.save(followee);
+
+    void (async () => {
+      try {
+        const existNotif =
+          await this.notificationService.findRecentNotificationsForUser(
+            followee_id,
+            follower_id,
+            NotificationType.FOLLOW,
+          );
+
+        if (!existNotif) {
+          try {
+            const settings =
+              await this.notificationSettingsService.getUserSettings(
+                followee_id,
+              );
+
+            if (settings?.notify_follows !== false) {
+              const notif = await this.notificationService.createNotification({
+                recipient_id: followee_id,
+                actor_id: follower_id,
+                type: NotificationType.FOLLOW,
+              });
+              this.notificationGateway.sendNotificationToUser(
+                followee_id,
+                notif,
+              );
+            }
+          } catch (error) {
+            console.warn(
+              "Failed to create notification for follow action",
+              followee_id,
+              error,
+            );
+          }
+        }
+      } catch (error) {
+        console.warn(
+          "Failed to check recent notifications for follow action",
+          followee_id,
+          error,
+        );
+      }
+    })();
+
     return follower;
   }
 
