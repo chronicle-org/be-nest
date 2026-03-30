@@ -4,6 +4,8 @@ import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { ResponseInterceptor } from "./interceptors/response.interceptor";
 import cookieParser from "cookie-parser";
+import * as fs from "fs";
+import * as path from "path";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -75,6 +77,13 @@ async function bootstrap() {
       defaultModelExpandDepth: 1,
     },
   });
+
+  // Export OpenAPI spec to file (useful for SwaggerHub)
+  if (process.env.NODE_ENV !== "production") {
+    const specPath = path.join(process.cwd(), "openapi.json");
+    fs.writeFileSync(specPath, JSON.stringify(document, null, 2));
+    console.log(`📄 OpenAPI spec exported to: ${specPath}`);
+  }
 
   const port = process.env.PORT || 3001;
   await app.listen(port, "0.0.0.0");
