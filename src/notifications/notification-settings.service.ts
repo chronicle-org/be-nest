@@ -57,7 +57,7 @@ export class NotificationSettingsService {
           })),
         );
       } catch (error) {
-        console.warn("Some notification settings already exist", error);
+        console.warn("Failed to insert missing notification settings", error);
       }
       const newlyInserted = await this.repo.find({
         where: { user_id: In(missingUserIds) },

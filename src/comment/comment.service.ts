@@ -25,6 +25,51 @@ export class CommentService {
     private notificationGateway: NotificationGateway,
   ) {}
 
+  /**
+   * Execute async task in background without blocking response
+   */
+  private runAsync(task: () => Promise<void>, errorContext: string): void {
+    void task().catch((err) => {
+      console.error(`${errorContext}:`, err);
+    });
+  }
+
+  /**
+   * Send notification for new comment
+   */
+  private async sendCommentNotification(
+    recipient_id: number,
+    actor_id: number,
+    post_id: number,
+  ): Promise<void> {
+    const existingNotification =
+      await this.notificationService.findRecentNotificationsForUser(
+        recipient_id,
+        actor_id,
+        NotificationType.COMMENT,
+        3,
+      );
+
+    if (!existingNotification) {
+      const settings =
+        await this.notificationSettingsService.getUserSettings(recipient_id);
+
+      if (settings?.notify_comments !== false) {
+        const notification = await this.notificationService.createNotification({
+          recipient_id,
+          actor_id,
+          type: NotificationType.COMMENT,
+          post_id,
+        });
+
+        this.notificationGateway.sendNotificationToUser(
+          recipient_id,
+          notification,
+        );
+      }
+    }
+  }
+
   async create(data: Partial<Comment>): Promise<Comment> {
     const commentData: Partial<Comment> = {
       user_id: data.user_id,
@@ -34,47 +79,22 @@ export class CommentService {
       updated_at: new Date(),
     };
 
-    const savedComment = await this.repo.save(commentData);
+    const savedComment = await this.repo.save(commentData, { reload: true });
     await this.postRepo.increment({ id: data.post_id }, "comment_count", 1);
 
+    // Comment creation is now atomic and complete
+    // Notifications are fire-and-forget and won't block the response
     const post = savedComment.post;
-    if (post && post.user_id !== data.user_id) {
-      void (async () => {
-        try {
-          const existingNotification =
-            await this.notificationService.findRecentNotificationsForUser(
-              post.user_id,
-              data.user_id as number,
-              NotificationType.COMMENT,
-              3,
-            );
-          if (!existingNotification) {
-            const postOwnerSettings =
-              await this.notificationSettingsService.getUserSettings(
-                post.user_id,
-              );
-            if (postOwnerSettings?.notify_comments !== false && data.user_id) {
-              const notification =
-                await this.notificationService.createNotification({
-                  recipient_id: post.user_id,
-                  actor_id: data.user_id,
-                  type: NotificationType.COMMENT,
-                  post_id: data.post_id,
-                });
-              this.notificationGateway.sendNotificationToUser(
-                post.user_id,
-                notification,
-              );
-            }
-          }
-        } catch (error) {
-          console.warn(
-            "Failed to create or deliver comment notification for user",
+    if (post && post.user_id !== data.user_id && data.user_id) {
+      this.runAsync(
+        () =>
+          this.sendCommentNotification(
             post.user_id,
-            error,
-          );
-        }
-      })();
+            data.user_id as number,
+            data.post_id as number,
+          ),
+        `Failed to send comment notification for user ${post.user_id}`,
+      );
     }
 
     return savedComment;
