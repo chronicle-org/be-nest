@@ -78,3 +78,9 @@ export class UpdateNotificationSettingsDto {
   @IsInt({ each: true })
   notify_followed_posts_from_users?: number[];
 }
+
+export class MarkNotificationsReadDto {
+  @IsArray()
+  @IsInt({ each: true })
+  ids: number[];
+}

@@ -37,18 +37,18 @@ export class CommentService {
     const savedComment = await this.repo.save(commentData);
     await this.postRepo.increment({ id: data.post_id }, "comment_count", 1);
 
-    const post = await this.postRepo.findOneBy({ id: data.post_id });
-    if (post && !!data.user_id && post.user_id !== data.user_id) {
-      const existingNotification =
-        await this.notificationService.findRecentNotificationsForUser(
-          post.user_id,
-          data.user_id,
-          NotificationType.COMMENT,
-          3,
-        );
-      if (!existingNotification) {
-        void (async () => {
-          try {
+    const post = savedComment.post;
+    if (post && post.user_id !== data.user_id) {
+      void (async () => {
+        try {
+          const existingNotification =
+            await this.notificationService.findRecentNotificationsForUser(
+              post.user_id,
+              data.user_id as number,
+              NotificationType.COMMENT,
+              3,
+            );
+          if (!existingNotification) {
             const postOwnerSettings =
               await this.notificationSettingsService.getUserSettings(
                 post.user_id,
@@ -66,15 +66,15 @@ export class CommentService {
                 notification,
               );
             }
-          } catch (error) {
-            console.warn(
-              "Failed to create or deliver comment notification for user",
-              post.user_id,
-              error,
-            );
           }
-        })();
-      }
+        } catch (error) {
+          console.warn(
+            "Failed to create or deliver comment notification for user",
+            post.user_id,
+            error,
+          );
+        }
+      })();
     }
 
     return savedComment;

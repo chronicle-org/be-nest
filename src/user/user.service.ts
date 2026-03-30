@@ -76,15 +76,15 @@ export class UserService {
     await this.repo.save(follower);
     await this.repo.save(followee);
 
-    const existNotif =
-      await this.notificationService.findRecentNotificationsForUser(
-        followee_id,
-        follower_id,
-        NotificationType.FOLLOW,
-      );
+    void (async () => {
+      const existNotif =
+        await this.notificationService.findRecentNotificationsForUser(
+          followee_id,
+          follower_id,
+          NotificationType.FOLLOW,
+        );
 
-    if (!existNotif) {
-      void (async () => {
+      if (!existNotif) {
         try {
           const settings =
             await this.notificationSettingsService.getUserSettings(followee_id);
@@ -104,8 +104,8 @@ export class UserService {
             error,
           );
         }
-      })();
-    }
+      }
+    })();
 
     return follower;
   }

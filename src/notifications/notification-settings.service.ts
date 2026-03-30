@@ -38,12 +38,13 @@ export class NotificationSettingsService {
   }
 
   async getUserSettingsBulk(userIds: number[]) {
+    const uniqueUserIds = Array.from(new Set(userIds));
     let settings = await this.repo.find({
-      where: { user_id: In(userIds) },
+      where: { user_id: In(uniqueUserIds) },
     });
 
     const foundUserIds = new Set(settings.map((s) => s.user_id));
-    const missingUserIds = userIds.filter((id) => !foundUserIds.has(id));
+    const missingUserIds = uniqueUserIds.filter((id) => !foundUserIds.has(id));
 
     if (missingUserIds.length > 0) {
       try {

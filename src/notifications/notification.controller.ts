@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import {
   GetAllNotificationsForUserDto,
+  MarkNotificationsReadDto,
   // InsertNotificationDto,
   UpdateNotificationSettingsDto,
 } from "./dto/notifications.dto";
@@ -73,9 +74,10 @@ export class NotificationController {
   @Put("/read")
   @UseGuards(JwtAuthGuard)
   async markAsRead(
-    @Body("ids") ids: number[] = [],
+    @Body() body: MarkNotificationsReadDto,
     @CurrentUser() user: JwtPayload,
   ) {
+    const ids = body.ids;
     if (ids.length === 0) {
       return { data: undefined, message: "No notifications to mark as read" };
     } else if (ids.length === 1) {

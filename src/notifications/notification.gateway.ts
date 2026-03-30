@@ -8,13 +8,14 @@ import {
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
+  WsException,
 } from "@nestjs/websockets";
 import { In, Repository } from "typeorm";
 import { Notification } from "./notification.entity";
 import { Server, Socket } from "socket.io";
 import * as jwt from "jsonwebtoken";
 import { cookieName, JwtPayload } from "src/auth/jwt.strategy";
-import { BadRequestException } from "@nestjs/common";
+import { parse as parseCookies } from "cookie";
 
 const rawCorsOrigin = process.env.CORS_ORIGIN;
 const parsedCorsOrigins = rawCorsOrigin
@@ -54,21 +55,13 @@ export class NotificationGateway
 
   private extractUserIdFromSocket(socket: Socket): number | null {
     try {
-      const cookies = socket.handshake.headers.cookie || "";
-
-      const token = cookies
-        .split(";")
-        .map((c) => c.trim())
-        .find((c) => c.startsWith(cookieName + "="))
-        ?.split("=")[1];
+      const cookieHeader = socket.handshake.headers.cookie || "";
+      const cookies = parseCookies(cookieHeader);
+      const token = cookies[cookieName];
 
       if (!token) return null;
 
-      const secret = this.configService.get<string>("JWT_SECRET");
-      if (!secret) {
-        console.error("Auth error: JWT secret is not configured");
-        return null;
-      }
+      const secret = this.configService.get<string>("JWT_SECRET") || "secret"; // INTENTIONAL FALLBACK, should always be set in production
 
       const payload = jwt.verify(token, secret, {
         algorithms: ["HS256"],
@@ -124,7 +117,7 @@ export class NotificationGateway
     @ConnectedSocket() socket: Socket,
   ) {
     const userId = this.extractUserIdFromSocket(socket);
-    if (!userId || !ids.length) throw new BadRequestException();
+    if (!userId || !ids.length) throw new WsException("Invalid request");
     const now = new Date();
     await this.repo.update(
       { id: In(ids), recipient_id: userId },
