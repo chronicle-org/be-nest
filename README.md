@@ -26,3 +26,6 @@ Chronicle Backend is the core API service of the Chronicle ecosystem. It connect
 - **API Style:** REST (GraphQL optional)  
 - **Deployment:** Google Cloud Run  
 - **Auth:** JWT / Supabase Auth
+
+
+[**Swagger**](https://app.swaggerhub.com/apis/AdithiaSandi/chronicle-api/1.0.0)
