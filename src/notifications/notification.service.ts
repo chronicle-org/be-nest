@@ -13,12 +13,14 @@ export class NotificationService {
 
   async getUserNotifications(userId: number, limit = 20, page = 1) {
     const offset = (page - 1) * limit;
-    return this.repo.find({
+    const [data, total] = await this.repo.findAndCount({
       where: { recipient_id: userId, deleted: false },
+      relations: ["actor", "post", "comment"],
       order: { created_at: "DESC" },
       take: limit,
       skip: offset,
     });
+    return { data, total };
   }
 
   async findRecentNotificationsForUser(
@@ -103,16 +105,20 @@ export class NotificationService {
   }
 
   async markAsRead(notificationId: number, userId: number) {
-    return this.repo.update(
+    await this.repo.update(
       { id: notificationId, recipient_id: userId },
       { read: true, read_at: new Date() },
     );
+    const newData = await this.repo.findBy({ id: notificationId });
+    return newData[0];
   }
 
   async markMultipleAsRead(notificationIds: number[], userId: number) {
-    return this.repo.update(
+    await this.repo.update(
       { id: In(notificationIds), recipient_id: userId },
       { read: true, read_at: new Date() },
     );
+    const newData = await this.repo.findBy({ id: In(notificationIds) });
+    return newData;
   }
 }
