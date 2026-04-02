@@ -20,7 +20,6 @@ import {
 import {
   GetAllNotificationsForUserDto,
   MarkNotificationsReadDto,
-  // InsertNotificationDto,
   UpdateNotificationSettingsDto,
 } from "./dto/notifications.dto";
 import { NotificationService } from "./notification.service";
@@ -28,6 +27,12 @@ import { NotificationSettingsService } from "./notification-settings.service";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import type { JwtPayload } from "src/auth/jwt.strategy";
 import { CurrentUser } from "src/utils/decorator";
+import { Notification } from "./notification.entity";
+
+export interface PagedResult {
+  data: Notification[];
+  total: number;
+}
 
 @ApiTags("Notifications")
 @Controller("notifications")
@@ -46,12 +51,12 @@ export class NotificationController {
   @ApiBearerAuth("access-token")
   @Get()
   @UseGuards(JwtAuthGuard)
-  async getNotificationsForUser(
+  getNotificationsForUser(
     @Query() queryDto: GetAllNotificationsForUserDto,
     @CurrentUser() user: JwtPayload,
-  ) {
+  ): Promise<PagedResult> {
     const { limit = 20, page = 1 } = queryDto;
-    return await this.notificationService.getUserNotifications(
+    return this.notificationService.getUserNotifications(
       user.user_id,
       limit,
       page,
@@ -110,9 +115,10 @@ export class NotificationController {
     const ids = body.ids;
     if (ids.length === 0) {
       return { data: undefined, message: "No notifications to mark as read" };
-    } else if (ids.length === 1) {
-      return await this.notificationService.markAsRead(ids[0], user.user_id);
     }
+    // else if (ids.length === 1) {
+    //   return await this.notificationService.markAsRead(ids[0], user.user_id);
+    // }
     return await this.notificationService.markMultipleAsRead(ids, user.user_id);
   }
 
