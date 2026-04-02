@@ -5,6 +5,7 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -15,7 +16,6 @@ import { Notification } from "./notification.entity";
 import { Server, Socket } from "socket.io";
 import * as jwt from "jsonwebtoken";
 import { cookieName, JwtPayload } from "src/auth/jwt.strategy";
-import { parse as parseCookies } from "cookie";
 
 const parseCorsOrigins = (): string[] => {
   const rawCorsOrigin = process.env.CORS_ORIGIN;
@@ -58,7 +58,7 @@ interface SocketData {
   },
 })
 export class NotificationGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
 {
   @WebSocketServer()
   server: Server;
@@ -69,12 +69,20 @@ export class NotificationGateway
   ) {}
 
   private userSockets = new Map<number, Set<string>>();
+  private tokenValidationInterval: NodeJS.Timeout;
 
   private extractUserIdFromSocket(socket: Socket): number | null {
     try {
       const cookieHeader = socket.handshake.headers.cookie || "";
-      const cookies = parseCookies(cookieHeader);
-      const token = cookies[cookieName];
+
+      // Manual cookie parsing to avoid type issues
+      let token: string | undefined;
+      cookieHeader.split(";").forEach((cookie) => {
+        const [key, value] = cookie.trim().split("=");
+        if (key === cookieName) {
+          token = value;
+        }
+      });
 
       if (!token) return null;
 
@@ -87,6 +95,42 @@ export class NotificationGateway
     } catch (error) {
       console.error("Auth error:", error);
       return null;
+    }
+  }
+
+  private validateSocketToken(socket: Socket): boolean {
+    const userId = this.extractUserIdFromSocket(socket);
+    if (!userId) {
+      socket.disconnect();
+      console.warn(
+        `Socket ${socket.id} disconnected due to invalid/expired token`,
+      );
+      return false;
+    }
+    return true;
+  }
+
+  afterInit() {
+    // Start periodic token validation every 5 minutes
+    this.tokenValidationInterval = setInterval(
+      () => {
+        if (!this.server?.sockets?.sockets) return;
+        this.server.sockets.sockets.forEach((socket) => {
+          if (!this.validateSocketToken(socket)) {
+            const userId = (socket.data as SocketData)["userId"];
+            if (userId) {
+              this.userSockets.get(userId)?.delete(socket.id);
+            }
+          }
+        });
+      },
+      5 * 60 * 1000,
+    ); // 5 minutes
+  }
+
+  afterDisconnect() {
+    if (this.tokenValidationInterval) {
+      clearInterval(this.tokenValidationInterval);
     }
   }
 
@@ -121,6 +165,10 @@ export class NotificationGateway
     @MessageBody() id: number,
     @ConnectedSocket() socket: Socket,
   ) {
+    // Re-validate token on each message
+    if (!this.validateSocketToken(socket)) {
+      throw new WsException("Token expired or invalid");
+    }
     const userId = (socket.data as SocketData)["userId"];
     if (!userId) return;
     await this.repo.update(
@@ -134,6 +182,10 @@ export class NotificationGateway
     @MessageBody() ids: number[] = [],
     @ConnectedSocket() socket: Socket,
   ) {
+    // Re-validate token on each message
+    if (!this.validateSocketToken(socket)) {
+      throw new WsException("Token expired or invalid");
+    }
     const userId = (socket.data as SocketData)["userId"];
     if (!userId || !ids.length) throw new WsException("Invalid request");
     const now = new Date();
@@ -143,7 +195,14 @@ export class NotificationGateway
     );
   }
 
+  @SubscribeMessage("verify-token")
+  handleTokenVerification(@ConnectedSocket() socket: Socket) {
+    const isValid = this.validateSocketToken(socket);
+    socket.emit("token-verified", { valid: isValid });
+  }
+
   sendNotificationToUser(userId: number, notification: Notification) {
+    console.log(`[WS] Sending to user:${userId}`, notification);
     this.server.to(`user:${userId}`).emit("notification", notification);
   }
 

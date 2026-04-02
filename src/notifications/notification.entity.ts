@@ -8,6 +8,7 @@ import {
 } from "typeorm";
 import { User } from "src/user/user.entity";
 import { Post } from "src/post/post.entity";
+import { Comment } from "src/comment/comment.entity";
 
 export enum NotificationType {
   COMMENT = 1,
@@ -69,4 +70,8 @@ export class Notification {
   @ManyToOne(() => Post, { nullable: true })
   @JoinColumn({ name: "post_id" })
   post: Post | null;
+
+  @ManyToOne(() => Comment, { nullable: true })
+  @JoinColumn({ name: "comment_id" })
+  comment: Comment | null;
 }
