@@ -24,10 +24,6 @@ export class UserService {
     private notificationGateway: NotificationGateway,
   ) {}
 
-  create(data: Partial<User>): Promise<User> {
-    return this.repo.save(data);
-  }
-
   async update(id: number, data: Partial<User>): Promise<User> {
     await this.repo.update(
       { id },
@@ -35,7 +31,7 @@ export class UserService {
         ...data,
       },
     );
-    return this.repo.findOneBy({ id }) as Promise<User>;
+    return this.findOne(id) as Promise<User>;
   }
 
   findAll(): Promise<User[]> {
@@ -47,7 +43,12 @@ export class UserService {
   }
 
   async findOne(id: number): Promise<User | null> {
-    const userData = await this.repo.findOneBy({ id });
+    // Email is hidden by default; only the single-profile lookup includes it.
+    const userData = await this.repo
+      .createQueryBuilder("user")
+      .addSelect("user.email")
+      .where({ id })
+      .getOne();
     if (!userData) throw new NotFoundException();
     return userData;
   }

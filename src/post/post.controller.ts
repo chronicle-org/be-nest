@@ -23,6 +23,7 @@ import { CreatePostDto } from "./dto/post.dto";
 import { UpdatePostDto } from "./dto/post.dto";
 import { FindPostsQueryDto } from "./dto/find-posts-query.dto";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
+import { OptionalJwtAuthGuard } from "src/auth/optional-jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "src/auth/jwt.strategy";
 import type { InteractionType } from "src/utils/types";
@@ -59,8 +60,12 @@ export class PostController {
   @ApiResponse({ status: 200, description: "Post details" })
   @ApiResponse({ status: 404, description: "Post not found" })
   @Get("/:id")
-  findOne(@Param("id", ParseIntPipe) id: number): Promise<PostEntity | null> {
-    return this.service.findOne(id);
+  @UseGuards(OptionalJwtAuthGuard)
+  findOne(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentUser() user: JwtPayload | null,
+  ): Promise<PostEntity | null> {
+    return this.service.findOne(id, user?.user_id);
   }
 
   @ApiOperation({ summary: "Get draft posts of current user" })

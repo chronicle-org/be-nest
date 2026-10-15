@@ -44,13 +44,6 @@ export class UserController {
     return this.service.findOne(id);
   }
 
-  @ApiOperation({ summary: "Create a new user" })
-  @ApiResponse({ status: 201, description: "User created successfully" })
-  @Post()
-  create(@Body() data: Partial<User>): Promise<User> {
-    return this.service.create(data);
-  }
-
   @ApiOperation({ summary: "Update current user profile" })
   @ApiResponse({ status: 200, description: "User updated successfully" })
   @ApiBearerAuth("access-token")

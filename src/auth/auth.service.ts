@@ -86,6 +86,7 @@ export class AuthService {
     const user = await this.repo
       .createQueryBuilder("user")
       .addSelect("user.password_hash")
+      .addSelect("user.email")
       .where({ email })
       .getOne();
 

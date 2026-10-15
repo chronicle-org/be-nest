@@ -1,7 +1,6 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { ConfigModule } from "@nestjs/config";
-import { AppointmentsModule } from "./appointments/appointments.module";
 import { UserModule } from "./user/user.module";
 import { AuthModule } from "./auth/auth.module";
 import { PostModule } from "./post/post.module";
@@ -17,11 +16,9 @@ import { NotificationModule } from "./notifications/notification.module";
       url: process.env.DATABASE_URL,
       autoLoadEntities: true,
       synchronize: true,
-      ssl: {
-        rejectUnauthorized: false,
-      },
+      ssl:
+        process.env.DB_SSL === "false" ? false : { rejectUnauthorized: false },
     }),
-    AppointmentsModule,
     UserModule,
     AuthModule,
     PostModule,
