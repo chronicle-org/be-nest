@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -294,7 +295,10 @@ export class PostService {
     search: string = "",
   ): Promise<PagedResult> {
     const skip = (page - 1) * limit;
-    const searchConditions = this.buildSearchConditions(search, { user_id });
+    const searchConditions = this.buildSearchConditions(search, {
+      user_id,
+      is_draft: false,
+    });
 
     const [data, total] = await this.repo.findAndCount({
       where: searchConditions,
@@ -344,16 +348,18 @@ export class PostService {
     }
   }
 
-  async findOne(id: number): Promise<Post | null> {
+  async findOne(id: number, viewer_id?: number): Promise<Post | null> {
     try {
       const post = await this.repo.findOne({
         where: { id },
         relations: ["user"],
       });
-      if (!post) throw new NotFoundException("Post not found");
+      // Drafts are only visible to their author.
+      if (!post || (post.is_draft && post.user_id !== viewer_id))
+        throw new NotFoundException("Post not found");
       return post;
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException("Error fetching post");
     }
   }

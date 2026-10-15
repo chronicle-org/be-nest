@@ -13,6 +13,23 @@ jobs:
   pr-check:
     runs-on: ubuntu-latest
 
+    # Throwaway database so the boot check (which runs TypeORM synchronize)
+    # never touches production data or schema.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: chronicle
+          POSTGRES_PASSWORD: chronicle
+          POSTGRES_DB: chronicle_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chronicle"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@v4
@@ -65,17 +82,16 @@ jobs:
 
       - name: Validate dev server (app runs)
         env:
-            # --- SECRETS (HIGHLY SENSITIVE) ---
-            DATABASE_URL: ${{ secrets.DATABASE_URL }}
-            JWT_SECRET: ${{ secrets.JWT_SECRET }}
-            SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-            SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-
-            # --- VARIABLES (NON-SENSITIVE CONFIG) ---
-            PORT: ${{ vars.PORT }}
-            NODE_ENV: ${{ vars.NODE_ENV }}
-            SUPABASE_BUCKET: ${{ vars.SUPABASE_BUCKET }}
-            CORS_ORIGIN: ${{ vars.CORS_ORIGIN }}
+          # CI-only values: no production secrets are used here.
+          DATABASE_URL: postgres://chronicle:chronicle@localhost:5432/chronicle_ci
+          DB_SSL: "false"
+          JWT_SECRET: ci-only-secret
+          SUPABASE_URL: http://localhost:54321
+          SUPABASE_SERVICE_ROLE_KEY: ci-only-key
+          SUPABASE_BUCKET: ci
+          PORT: 3000
+          NODE_ENV: test
+          CORS_ORIGIN: http://localhost:3000
         run: |
           echo "Starting dev server..."
           npm run start &
