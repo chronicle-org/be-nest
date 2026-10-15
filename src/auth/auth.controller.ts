@@ -6,6 +6,9 @@ import { LoginDto } from "./dto/login.dto";
 import { User } from "../user/user.entity";
 import type { Response } from "express";
 import { cookieName } from "./jwt.strategy";
+import { Throttle } from "@nestjs/throttler";
+
+const AUTH_LIMIT = { default: { ttl: 60_000, limit: 10 } };
 
 @ApiTags("Auth")
 @Controller("auth")
@@ -18,6 +21,7 @@ export class AuthController {
     description: "Login successful. Token set in cookie.",
   })
   @ApiResponse({ status: 401, description: "Invalid credentials" })
+  @Throttle(AUTH_LIMIT)
   @Post("/login")
   async login(
     @Body() data: LoginDto,
@@ -44,6 +48,7 @@ export class AuthController {
     status: 400,
     description: "Email already exists or invalid input",
   })
+  @Throttle(AUTH_LIMIT)
   @Post("/register")
   register(@Body() data: RegisterDto): Promise<Partial<User> | null | string> {
     return this.service.register(data);
