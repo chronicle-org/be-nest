@@ -28,6 +28,7 @@ import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "src/auth/jwt.strategy";
 import type { InteractionType } from "src/utils/types";
 import { User } from "src/user/user.entity";
+import { Throttle } from "@nestjs/throttler";
 
 @ApiTags("Posts")
 @Controller("post")
@@ -152,6 +153,8 @@ export class PostController {
 
   @ApiOperation({ summary: "Increment post counters (views, shares)" })
   @ApiResponse({ status: 200, description: "Counter incremented" })
+  // Stricter per-IP limit: anyone can call this without logging in.
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @Put("/counter/:action/:post_id")
   incrementCounter(
     @Param("action") action: "share" | "view",
