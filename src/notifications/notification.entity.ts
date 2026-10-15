@@ -67,11 +67,11 @@ export class Notification {
   @JoinColumn({ name: "actor_id" })
   actor: User;
 
-  @ManyToOne(() => Post, { nullable: true })
+  @ManyToOne(() => Post, { nullable: true, onDelete: "CASCADE" })
   @JoinColumn({ name: "post_id" })
   post: Post | null;
 
-  @ManyToOne(() => Comment, { nullable: true })
+  @ManyToOne(() => Comment, { nullable: true, onDelete: "CASCADE" })
   @JoinColumn({ name: "comment_id" })
   comment: Comment | null;
 }
