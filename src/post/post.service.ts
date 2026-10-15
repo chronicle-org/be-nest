@@ -1,10 +1,10 @@
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
-  UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { FindOperator, ILike, Repository } from "typeorm";
@@ -216,6 +216,7 @@ export class PostService {
       title: data.title,
       sub_title: data.sub_title,
       thumbnail_url: data.thumbnail_url,
+      tags: data.tags,
       is_draft: data.is_draft || false,
       reading_time: readingTime,
     };
@@ -240,7 +241,7 @@ export class PostService {
       const postData = await this.repo.findOneBy({ id: data.id! });
       if (!postData) throw new NotFoundException("Post not found");
       else if (postData.user_id !== data.user_id)
-        throw new UnauthorizedException("Unauthorized to update this post");
+        throw new ForbiddenException("You cannot update this post");
 
       const readingTime = data.content
         ? calculateReadingTime(data.content)
@@ -253,6 +254,7 @@ export class PostService {
           title: data.title,
           sub_title: data.sub_title,
           thumbnail_url: data.thumbnail_url,
+          tags: data.tags,
           updated_at: new Date(),
           visibility: data.visibility,
           is_draft:
@@ -262,7 +264,7 @@ export class PostService {
       );
       return this.repo.findOneBy({ id: data.id! }) as Promise<Post>;
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException("Error updating post");
     }
   }
@@ -334,7 +336,7 @@ export class PostService {
       const post = await this.repo.findOneBy({ id: post_id });
       if (!post) throw new NotFoundException("Post not found");
       if (post.user_id !== user_id)
-        throw new UnauthorizedException("Unauthorized to publish this post");
+        throw new ForbiddenException("You cannot publish this post");
       if (!post.is_draft)
         throw new BadRequestException("This post is not a draft");
 
@@ -343,7 +345,7 @@ export class PostService {
       await this.repo.save(post);
       return post;
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException("Error publishing draft");
     }
   }
@@ -369,11 +371,11 @@ export class PostService {
       const post = await this.repo.findOneBy({ id });
       if (!post) throw new NotFoundException("Post not found");
       else if (post.user_id !== userId)
-        throw new UnauthorizedException("Unauthorized to update this post");
+        throw new ForbiddenException("You cannot delete this post");
       await this.repo.delete({ id });
       return { message: "Post deleted successfully" };
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException("Error deleting post");
     }
   }
@@ -410,13 +412,7 @@ export class PostService {
 
       return { post, user };
     } catch (error) {
-      if (
-        error instanceof BadRequestException ||
-        error instanceof NotFoundException ||
-        error instanceof UnauthorizedException
-      ) {
-        throw error;
-      }
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException("Error interacting with post");
     }
   }

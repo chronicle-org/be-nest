@@ -1,8 +1,9 @@
 import {
+  ForbiddenException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
-  UnauthorizedException,
 } from "@nestjs/common";
 import { Comment } from "./comment.entity";
 import { InjectRepository } from "@nestjs/typeorm";
@@ -110,7 +111,7 @@ export class CommentService {
     const commentData = await this.repo.findOneBy({ id: id });
     if (!commentData) throw new NotFoundException("Comment not found");
     else if (commentData.user_id !== userId)
-      throw new UnauthorizedException("Unauthorized to update this comment");
+      throw new ForbiddenException("You cannot update this comment");
     await this.repo.update(
       { id: id },
       {
@@ -157,7 +158,7 @@ export class CommentService {
 
       // Check if user is either the comment author or the post author
       if (comment.user_id !== userId && post?.user_id !== userId) {
-        throw new UnauthorizedException("You cannot delete this comment");
+        throw new ForbiddenException("You cannot delete this comment");
       }
 
       await this.repo.delete({ id });
@@ -170,12 +171,7 @@ export class CommentService {
       }
       return { message: "Comment deleted successfully" };
     } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof UnauthorizedException
-      ) {
-        throw error;
-      }
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException("Error deleting comment");
     }
   }
