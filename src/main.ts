@@ -1,4 +1,5 @@
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
@@ -8,7 +9,10 @@ import * as fs from "fs";
 import * as path from "path";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Behind Cloud Run's proxy: use the client IP from X-Forwarded-For for rate limiting.
+  app.set("trust proxy", 1);
 
   app.use(cookieParser());
 

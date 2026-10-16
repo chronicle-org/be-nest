@@ -6,11 +6,23 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, Repository } from "typeorm";
 import { User } from "./user.entity";
+import { addToJsonbArray, removeFromJsonbArray } from "src/utils/jsonb-array";
 import { Post } from "../post/post.entity";
 import { NotificationService } from "src/notifications/notification.service";
 import { NotificationSettingsService } from "src/notifications/notification-settings.service";
 import { NotificationGateway } from "src/notifications/notification.gateway";
 import { NotificationType } from "src/notifications/notification.entity";
+
+const FOLLOWING = {
+  table: "user",
+  column: "following",
+  countColumn: "following_count",
+} as const;
+const FOLLOWERS = {
+  table: "user",
+  column: "followers",
+  countColumn: "followers_count",
+} as const;
 
 @Injectable()
 export class UserService {
@@ -59,23 +71,18 @@ export class UserService {
       throw new BadRequestException("Cannot follow yourself");
     }
 
-    const follower = await this.findOne(follower_id);
-    const followee = await this.findOne(followee_id);
-    if (!follower || !followee) throw new NotFoundException();
-
-    follower.following = follower.following || [];
-    // Prevent duplicate follows
-    if (follower.following.includes(followee_id)) {
-      throw new BadRequestException("Already following this user");
-    }
-
-    follower.following.push(followee_id);
-    follower.following_count++;
-    followee.followers = followee.followers || [];
-    followee.followers.push(follower_id);
-    followee.followers_count++;
-    await this.repo.save(follower);
-    await this.repo.save(followee);
+    // Both must exist; findOne throws 404 otherwise.
+    await Promise.all([this.findOne(follower_id), this.findOne(followee_id)]);
+    await this.repo.manager.transaction(async (manager) => {
+      const added = await addToJsonbArray(
+        manager,
+        FOLLOWING,
+        follower_id,
+        followee_id,
+      );
+      if (!added) throw new BadRequestException("Already following this user");
+      await addToJsonbArray(manager, FOLLOWERS, followee_id, follower_id);
+    });
 
     void (async () => {
       try {
@@ -121,27 +128,22 @@ export class UserService {
       }
     })();
 
-    return follower;
+    return this.findOne(follower_id) as Promise<User>;
   }
 
   async unfollow(follower_id: number, followee_id: number): Promise<User> {
-    const follower = await this.findOne(follower_id);
-    const followee = await this.findOne(followee_id);
-    if (!follower || !followee) throw new NotFoundException();
-
-    follower.following = follower.following || [];
-    if (!follower.following.includes(followee_id)) {
-      throw new BadRequestException("Not following this user");
-    }
-
-    follower.following = follower.following.filter((id) => id !== followee_id);
-    follower.following_count--;
-    followee.followers = followee.followers || [];
-    followee.followers = followee.followers.filter((id) => id !== follower_id);
-    followee.followers_count--;
-    await this.repo.save(follower);
-    await this.repo.save(followee);
-    return follower;
+    await Promise.all([this.findOne(follower_id), this.findOne(followee_id)]);
+    await this.repo.manager.transaction(async (manager) => {
+      const removed = await removeFromJsonbArray(
+        manager,
+        FOLLOWING,
+        follower_id,
+        followee_id,
+      );
+      if (!removed) throw new BadRequestException("Not following this user");
+      await removeFromJsonbArray(manager, FOLLOWERS, followee_id, follower_id);
+    });
+    return this.findOne(follower_id) as Promise<User>;
   }
 
   async following(user_id: number): Promise<User[]> {

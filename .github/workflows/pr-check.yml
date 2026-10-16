@@ -111,3 +111,11 @@ jobs:
           echo "❌ Server failed to boot within 20 seconds."
           kill $SERVER_PID 2>/dev/null || true
           exit 1
+
+      # The boot above applied every migration; fail if entities changed
+      # without a matching migration (npm run migration:generate).
+      - name: Check migrations match entities
+        env:
+          DATABASE_URL: postgres://chronicle:chronicle@localhost:5432/chronicle_ci
+          DB_SSL: "false"
+        run: npm run migration:check
