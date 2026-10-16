@@ -8,6 +8,7 @@ import { AuthModule } from "./auth/auth.module";
 import { PostModule } from "./post/post.module";
 import { CommentModule } from "./comment/comment.module";
 import { getDataSourceOptions } from "./database/options";
+import { RATE_LIMIT } from "./utils/constant";
 import { FileModule } from "./file/file.module";
 import { NotificationModule } from "./notifications/notification.module";
 
@@ -15,7 +16,7 @@ import { NotificationModule } from "./notifications/notification.module";
   imports: [
     ConfigModule.forRoot(),
     // Default per-IP limit for every route; auth routes set a stricter one.
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
+    ThrottlerModule.forRoot([RATE_LIMIT.GLOBAL]),
     TypeOrmModule.forRoot({
       ...getDataSourceOptions(),
       autoLoadEntities: true,
