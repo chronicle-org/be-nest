@@ -43,10 +43,8 @@ export class AuthController {
     status: 201,
     description: "User registered successfully",
   })
-  @ApiResponse({
-    status: 400,
-    description: "Email already exists or invalid input",
-  })
+  @ApiResponse({ status: 400, description: "Invalid input" })
+  @ApiResponse({ status: 409, description: "Email is already registered" })
   @Throttle({ default: RATE_LIMIT.AUTH.REGISTER })
   @Post("/register")
   register(@Body() data: RegisterDto): Promise<Partial<User> | null | string> {

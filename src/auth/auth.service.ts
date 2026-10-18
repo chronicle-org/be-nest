@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
@@ -7,6 +8,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { User } from "../user/user.entity";
 import * as bcrypt from "bcrypt";
+import { randomInt } from "crypto";
 import { JwtService } from "@nestjs/jwt";
 import { JwtPayload } from "./jwt.strategy";
 import { generateHandle } from "src/utils";
@@ -40,12 +42,17 @@ export class AuthService {
         throw new InternalServerErrorException("Password is required");
       const hashedPassword = await bcrypt.hash(data.password, saltRounds);
       const now = new Date();
+      // Handles are name + minute, so two people with the same name signing
+      // up in the same minute would collide; add a random suffix if taken.
+      let handle = generateHandle(data.name);
+      if (await this.repo.existsBy({ handle }))
+        handle = `${handle}${randomInt(1000, 10000)}`;
       const userData: Partial<User> = {
         name: data.name,
         email: data.email,
         password_hash: hashedPassword,
         created_at: now,
-        handle: generateHandle(data.name),
+        handle,
       };
       const user = this.repo.create(userData);
       const savedUser = await this.repo.save(user);
@@ -75,6 +82,10 @@ export class AuthService {
       return rest;
     } catch (error) {
       if (error instanceof InternalServerErrorException) throw error;
+      // 23505 is Postgres's unique_violation.
+      const pgError = error as { code?: string; detail?: string };
+      if (pgError.code === "23505" && pgError.detail?.includes("(email)"))
+        throw new ConflictException("Email is already registered");
       throw new InternalServerErrorException("Failed to create user");
     }
   }
