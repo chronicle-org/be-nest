@@ -21,7 +21,8 @@ export class FileService {
   ): Promise<string> {
     if (!file) throw new Error("No file provided");
 
-    const fileExt: string = file.originalname.split(".").pop() ?? "jpg";
+    // Derive the extension from the checked MIME type, not the client-supplied name.
+    const fileExt = file.mimetype.split("/")[1] ?? "jpg";
     const fileName = `${Date.now()}.${fileExt}`;
     const filePath = `${fileUploadKey[key]}/${fileName}`;
 

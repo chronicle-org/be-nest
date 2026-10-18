@@ -15,7 +15,7 @@ import { In, Repository } from "typeorm";
 import { Notification } from "./notification.entity";
 import { Server, Socket } from "socket.io";
 import * as jwt from "jsonwebtoken";
-import { cookieName, JwtPayload } from "src/auth/jwt.strategy";
+import { cookieName, getJwtSecret, JwtPayload } from "src/auth/jwt.strategy";
 
 const parseCorsOrigins = (): string[] => {
   const rawCorsOrigin = process.env.CORS_ORIGIN;
@@ -86,9 +86,7 @@ export class NotificationGateway
 
       if (!token) return null;
 
-      const secret = this.configService.get<string>("JWT_SECRET") || "secret"; // INTENTIONAL FALLBACK, should always be set in production
-
-      const payload = jwt.verify(token, secret, {
+      const payload = jwt.verify(token, getJwtSecret(), {
         algorithms: ["HS256"],
       }) as JwtPayload;
       return payload.user_id;

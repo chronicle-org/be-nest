@@ -29,3 +29,13 @@ Chronicle Backend is the core API service of the Chronicle ecosystem. It connect
 
 
 [**Swagger**](https://app.swaggerhub.com/apis/AdithiaSandi/chronicle-api/1.0.0)
+
+## 🗄️ Database migrations
+
+The schema is managed by TypeORM migrations in `src/migrations`; the app applies pending ones on boot (`synchronize` is off).
+
+- After changing an entity: `npm run migration:generate -- src/migrations/DescribeTheChange`, then review and commit the generated file.
+- `npm run migration:check` fails if entities and migrations disagree (CI runs this).
+- `npm run migration:revert` undoes the latest migration.
+
+Set `DB_SSL=false` when your local Postgres has no SSL.

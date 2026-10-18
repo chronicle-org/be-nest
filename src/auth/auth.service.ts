@@ -1,7 +1,6 @@
 import {
   Injectable,
   InternalServerErrorException,
-  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
@@ -13,6 +12,10 @@ import { JwtPayload } from "./jwt.strategy";
 import { generateHandle } from "src/utils";
 import { NotificationSettings } from "../notifications/notification-settings.entity";
 import { baseDefaultSettingsValues } from "src/notifications/notification-settings.service";
+
+// bcrypt hash of a random string, compared against when the email is unknown.
+const DUMMY_HASH =
+  "$2b$10$K3ng5iSBR9S2ruSaaiLRZuwzuKXVUyh75oi9zUpX7zdsDT2DUyvw2";
 
 export type TRegisterData = {
   name: string;
@@ -90,10 +93,14 @@ export class AuthService {
       .where({ email })
       .getOne();
 
-    if (!user) throw new NotFoundException("User not found");
-
-    const passwordValid = await bcrypt.compare(password, user.password_hash);
-    if (!passwordValid) throw new UnauthorizedException("Invalid credentials");
+    // Same error and similar timing for unknown emails and wrong passwords,
+    // so login can't be used to check which emails are registered.
+    const passwordValid = await bcrypt.compare(
+      password,
+      user?.password_hash ?? DUMMY_HASH,
+    );
+    if (!user || !passwordValid)
+      throw new UnauthorizedException("Invalid credentials");
 
     delete (user as Partial<User>).password_hash;
 

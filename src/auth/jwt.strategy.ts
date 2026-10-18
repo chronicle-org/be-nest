@@ -12,6 +12,13 @@ export interface JwtPayload {
 
 export const cookieName = "chronicle_access_token";
 
+/** Reads JWT_SECRET and refuses to run without it, instead of falling back to a guessable default. */
+export const getJwtSecret = (): string => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET must be set");
+  return secret;
+};
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor() {
@@ -24,7 +31,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         },
       ]),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET || "secret",
+      secretOrKey: getJwtSecret(),
     });
   }
 

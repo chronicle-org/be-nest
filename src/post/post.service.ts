@@ -1,10 +1,10 @@
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
-  UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { FindOperator, ILike, Repository } from "typeorm";
@@ -12,6 +12,7 @@ import { Post } from "./post.entity";
 import { InteractionType } from "src/utils/types";
 import { User } from "src/user/user.entity";
 import { calculateReadingTime } from "src/utils";
+import { addToJsonbArray, removeFromJsonbArray } from "src/utils/jsonb-array";
 import { NotificationGateway } from "src/notifications/notification.gateway";
 import { NotificationService } from "src/notifications/notification.service";
 import { NotificationSettingsService } from "src/notifications/notification-settings.service";
@@ -22,13 +23,48 @@ export interface PagedResult {
   total: number;
 }
 
-interface InteractionHandlers {
-  [key: string]: (
-    post: Post,
-    user: User,
-    user_id: number,
-  ) => void | Promise<void>;
-}
+type InteractionConfig = {
+  postColumn: "likes" | "bookmarks";
+  userColumn: "likes" | "bookmarks";
+  add: boolean;
+  notify?: {
+    type: NotificationType;
+    settingKey: "notify_likes" | "notify_bookmarks";
+  };
+  conflictMessage: string;
+};
+
+const INTERACTIONS: Record<InteractionType, InteractionConfig> = {
+  like: {
+    postColumn: "likes",
+    userColumn: "likes",
+    add: true,
+    notify: { type: NotificationType.LIKE, settingKey: "notify_likes" },
+    conflictMessage: "User already liked this post",
+  },
+  unlike: {
+    postColumn: "likes",
+    userColumn: "likes",
+    add: false,
+    conflictMessage: "User has not liked this post",
+  },
+  bookmark: {
+    postColumn: "bookmarks",
+    userColumn: "bookmarks",
+    add: true,
+    notify: {
+      type: NotificationType.BOOKMARK,
+      settingKey: "notify_bookmarks",
+    },
+    conflictMessage: "User already bookmarked this post",
+  },
+  unbookmark: {
+    postColumn: "bookmarks",
+    userColumn: "bookmarks",
+    add: false,
+    conflictMessage: "User has not bookmarked this post",
+  },
+};
 
 @Injectable()
 export class PostService {
@@ -109,102 +145,6 @@ export class PostService {
     }
   }
 
-  /**
-   * Handle post like interaction
-   */
-  private handleLike(post: Post, user: User, actor_id: number): void {
-    post.likes = post.likes || [];
-    user.likes = user.likes || [];
-
-    if (post.likes.includes(actor_id)) {
-      throw new BadRequestException("User already liked this post");
-    }
-
-    post.likes.push(actor_id);
-    post.likes_count++;
-    user.likes.push(post.id);
-    user.likes_count++;
-
-    if (post.user_id !== actor_id) {
-      this.runAsync(
-        () =>
-          this.sendInteractionNotification(
-            post.user_id,
-            actor_id,
-            NotificationType.LIKE,
-            post.id,
-            "notify_likes",
-          ),
-        `Failed to create like notification for user ${post.user_id}`,
-      );
-    }
-  }
-
-  /**
-   * Handle post unlike interaction
-   */
-  private handleUnlike(post: Post, user: User, actor_id: number): void {
-    post.likes = post.likes || [];
-    user.likes = user.likes || [];
-
-    if (!post.likes.includes(actor_id)) {
-      throw new BadRequestException("User has not liked this post");
-    }
-
-    post.likes = post.likes.filter((id) => id !== actor_id);
-    post.likes_count--;
-    user.likes = user.likes.filter((id) => id !== post.id);
-    user.likes_count--;
-  }
-
-  /**
-   * Handle post bookmark interaction
-   */
-  private handleBookmark(post: Post, user: User, actor_id: number): void {
-    post.bookmarks = post.bookmarks || [];
-    user.bookmarks = user.bookmarks || [];
-
-    if (post.bookmarks.includes(actor_id)) {
-      throw new BadRequestException("User already bookmarked this post");
-    }
-
-    post.bookmarks.push(actor_id);
-    post.bookmarks_count++;
-    user.bookmarks.push(post.id);
-    user.bookmarks_count++;
-
-    if (post.user_id !== actor_id) {
-      this.runAsync(
-        () =>
-          this.sendInteractionNotification(
-            post.user_id,
-            actor_id,
-            NotificationType.BOOKMARK,
-            post.id,
-            "notify_bookmarks",
-          ),
-        `Failed to create bookmark notification for user ${post.user_id}`,
-      );
-    }
-  }
-
-  /**
-   * Handle post unbookmark interaction
-   */
-  private handleUnbookmark(post: Post, user: User, actor_id: number): void {
-    post.bookmarks = post.bookmarks || [];
-    user.bookmarks = user.bookmarks || [];
-
-    if (!post.bookmarks.includes(actor_id)) {
-      throw new BadRequestException("User has not bookmarked this post");
-    }
-
-    post.bookmarks = post.bookmarks.filter((id) => id !== actor_id);
-    post.bookmarks_count--;
-    user.bookmarks = user.bookmarks.filter((id) => id !== post.id);
-    user.bookmarks_count--;
-  }
-
   async create(data: Partial<Post>): Promise<Post> {
     const readingTime = data.content ? calculateReadingTime(data.content) : 0;
 
@@ -216,6 +156,7 @@ export class PostService {
       title: data.title,
       sub_title: data.sub_title,
       thumbnail_url: data.thumbnail_url,
+      tags: data.tags,
       is_draft: data.is_draft || false,
       reading_time: readingTime,
     };
@@ -240,7 +181,7 @@ export class PostService {
       const postData = await this.repo.findOneBy({ id: data.id! });
       if (!postData) throw new NotFoundException("Post not found");
       else if (postData.user_id !== data.user_id)
-        throw new UnauthorizedException("Unauthorized to update this post");
+        throw new ForbiddenException("You cannot update this post");
 
       const readingTime = data.content
         ? calculateReadingTime(data.content)
@@ -253,6 +194,7 @@ export class PostService {
           title: data.title,
           sub_title: data.sub_title,
           thumbnail_url: data.thumbnail_url,
+          tags: data.tags,
           updated_at: new Date(),
           visibility: data.visibility,
           is_draft:
@@ -262,7 +204,7 @@ export class PostService {
       );
       return this.repo.findOneBy({ id: data.id! }) as Promise<Post>;
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException("Error updating post");
     }
   }
@@ -334,7 +276,7 @@ export class PostService {
       const post = await this.repo.findOneBy({ id: post_id });
       if (!post) throw new NotFoundException("Post not found");
       if (post.user_id !== user_id)
-        throw new UnauthorizedException("Unauthorized to publish this post");
+        throw new ForbiddenException("You cannot publish this post");
       if (!post.is_draft)
         throw new BadRequestException("This post is not a draft");
 
@@ -343,7 +285,7 @@ export class PostService {
       await this.repo.save(post);
       return post;
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException("Error publishing draft");
     }
   }
@@ -369,11 +311,11 @@ export class PostService {
       const post = await this.repo.findOneBy({ id });
       if (!post) throw new NotFoundException("Post not found");
       else if (post.user_id !== userId)
-        throw new UnauthorizedException("Unauthorized to update this post");
+        throw new ForbiddenException("You cannot delete this post");
       await this.repo.delete({ id });
       return { message: "Post deleted successfully" };
     } catch (error) {
-      if (error instanceof InternalServerErrorException) throw error;
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException("Error deleting post");
     }
   }
@@ -383,40 +325,64 @@ export class PostService {
     post_id: number,
     user_id: number,
   ): Promise<{ post: Post; user: User } | null> {
+    const config = INTERACTIONS[action_type];
+    if (!config) {
+      throw new BadRequestException(`Invalid action type: ${action_type}`);
+    }
+
     try {
-      const [post, user] = await Promise.all([
-        this.repo.findOneBy({ id: post_id }),
-        this.userRepo.findOneBy({ id: user_id }),
-      ]);
-
+      const post = await this.repo.findOneBy({ id: post_id });
       if (!post) throw new NotFoundException("Post not found");
-      if (!user) throw new NotFoundException("User not found");
 
-      const handlers: InteractionHandlers = {
-        like: (p, u, uid) => this.handleLike(p, u, uid),
-        unlike: (p, u, uid) => this.handleUnlike(p, u, uid),
-        bookmark: (p, u, uid) => this.handleBookmark(p, u, uid),
-        unbookmark: (p, u, uid) => this.handleUnbookmark(p, u, uid),
-      };
+      // Both arrays change in one transaction with atomic UPDATEs, so
+      // simultaneous clicks can't drop each other's likes or bookmarks.
+      await this.repo.manager.transaction(async (manager) => {
+        const change = config.add ? addToJsonbArray : removeFromJsonbArray;
+        const postChanged = await change(
+          manager,
+          {
+            table: "post",
+            column: config.postColumn,
+            countColumn: `${config.postColumn}_count`,
+          },
+          post_id,
+          user_id,
+        );
+        if (!postChanged) throw new BadRequestException(config.conflictMessage);
+        await change(
+          manager,
+          {
+            table: "user",
+            column: config.userColumn,
+            countColumn: `${config.userColumn}_count`,
+          },
+          user_id,
+          post_id,
+        );
+      });
 
-      const handler = handlers[action_type];
-      if (!handler) {
-        throw new BadRequestException(`Invalid action type: ${action_type}`);
+      const notify = config.notify;
+      if (notify && post.user_id !== user_id) {
+        this.runAsync(
+          () =>
+            this.sendInteractionNotification(
+              post.user_id,
+              user_id,
+              notify.type,
+              post_id,
+              notify.settingKey,
+            ),
+          `Failed to create ${action_type} notification for user ${post.user_id}`,
+        );
       }
 
-      await handler(post, user, user_id);
-
-      await Promise.all([this.repo.save(post), this.userRepo.save(user)]);
-
-      return { post, user };
+      const [updatedPost, user] = await Promise.all([
+        this.repo.findOneByOrFail({ id: post_id }),
+        this.userRepo.findOneByOrFail({ id: user_id }),
+      ]);
+      return { post: updatedPost, user };
     } catch (error) {
-      if (
-        error instanceof BadRequestException ||
-        error instanceof NotFoundException ||
-        error instanceof UnauthorizedException
-      ) {
-        throw error;
-      }
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException("Error interacting with post");
     }
   }
@@ -427,13 +393,11 @@ export class PostService {
   ): Promise<Post> {
     const countField = action === "share" ? "share_count" : "view_count";
     try {
-      const post = await this.repo.findOneBy({ id: post_id });
-      if (!post) throw new NotFoundException("Post not found");
-      post[countField]++;
-      await this.repo.save(post);
-      return post;
+      const result = await this.repo.increment({ id: post_id }, countField, 1);
+      if (!result.affected) throw new NotFoundException("Post not found");
+      return this.repo.findOneByOrFail({ id: post_id });
     } catch (error) {
-      if (error instanceof NotFoundException) throw error;
+      if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException(`Error ${action} post`);
     }
   }
