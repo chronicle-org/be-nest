@@ -5,13 +5,14 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { QueryFailedError, Repository } from "typeorm";
 import { User } from "../user/user.entity";
 import * as bcrypt from "bcrypt";
 import { randomInt } from "crypto";
 import { JwtService } from "@nestjs/jwt";
 import { JwtPayload } from "./jwt.strategy";
 import { generateHandle } from "src/utils";
+import { PG_ERROR } from "src/utils/constant";
 import { NotificationSettings } from "../notifications/notification-settings.entity";
 import { baseDefaultSettingsValues } from "src/notifications/notification-settings.service";
 
@@ -23,6 +24,20 @@ export type TRegisterData = {
   name: string;
   email: string;
   password: string;
+};
+
+/** True when a save failed because `column` already holds that value. */
+const isUniqueViolation = (error: unknown, column: string): boolean => {
+  if (!(error instanceof QueryFailedError)) return false;
+  // TypeORM keeps the original pg error, which has the SQLSTATE code and a
+  // detail like "Key (email)=(a@x.com) already exists."
+  const { code, detail } = error.driverError as {
+    code?: string;
+    detail?: string;
+  };
+  return (
+    code === PG_ERROR.UNIQUE_VIOLATION && !!detail?.includes(`(${column})`)
+  );
 };
 
 @Injectable()
@@ -82,9 +97,7 @@ export class AuthService {
       return rest;
     } catch (error) {
       if (error instanceof InternalServerErrorException) throw error;
-      // 23505 is Postgres's unique_violation.
-      const pgError = error as { code?: string; detail?: string };
-      if (pgError.code === "23505" && pgError.detail?.includes("(email)"))
+      if (isUniqueViolation(error, "email"))
         throw new ConflictException("Email is already registered");
       throw new InternalServerErrorException("Failed to create user");
     }

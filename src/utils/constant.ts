@@ -24,3 +24,9 @@ export const RATE_LIMIT = {
     COUNTER: { ttl: ONE_MINUTE_MS, limit: 30 },
   },
 } as const;
+
+// Postgres SQLSTATE error codes we handle (https://www.postgresql.org/docs/current/errcodes-appendix.html).
+// Neither pg nor TypeORM exports these.
+export const PG_ERROR = {
+  UNIQUE_VIOLATION: "23505",
+} as const;
