@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
@@ -19,6 +20,12 @@ export enum NotificationType {
   POST = 6,
 }
 
+// The bell lists a user's notifications newest first.
+@Index(["recipient_id", "created_at"])
+// Postgres doesn't index foreign keys itself; these keep cascade deletes of
+// posts and comments from scanning the whole table.
+@Index(["post_id"])
+@Index(["comment_id"])
 @Entity()
 export class Notification {
   @PrimaryGeneratedColumn()
