@@ -40,6 +40,8 @@ The schema is managed by TypeORM migrations in `src/migrations`; the app applies
 
 Set `DB_SSL=false` when your local Postgres has no SSL.
 
+Set `SIGNUP_ENABLED=false` to close sign up: `POST /auth/register` then returns 403. Unset or any other value keeps it open. Restart the app after changing it.
+
 ## 🧪 Tests
 
 - `npm test` runs the unit tests.

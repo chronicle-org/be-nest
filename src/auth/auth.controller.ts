@@ -1,4 +1,10 @@
-import { Controller, Post, Body, Res } from "@nestjs/common";
+import {
+  Controller,
+  Post,
+  Body,
+  Res,
+  ForbiddenException,
+} from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { RegisterDto } from "./dto/register.dto";
@@ -44,10 +50,14 @@ export class AuthController {
     description: "User registered successfully",
   })
   @ApiResponse({ status: 400, description: "Invalid input" })
+  @ApiResponse({ status: 403, description: "Sign up is closed" })
   @ApiResponse({ status: 409, description: "Email is already registered" })
   @Throttle({ default: RATE_LIMIT.AUTH.REGISTER })
   @Post("/register")
   register(@Body() data: RegisterDto): Promise<Partial<User> | null | string> {
+    // Sign up stays open unless SIGNUP_ENABLED is explicitly "false".
+    if (process.env.SIGNUP_ENABLED === "false")
+      throw new ForbiddenException("Sign up is closed");
     return this.service.register(data);
   }
 

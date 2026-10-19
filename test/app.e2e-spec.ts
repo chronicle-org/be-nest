@@ -81,6 +81,18 @@ describe("Chronicle API (e2e)", () => {
         .send({ name: "Ann", email: ann.email, password })
         .expect(409));
 
+    it("rejects sign up when SIGNUP_ENABLED is false", async () => {
+      process.env.SIGNUP_ENABLED = "false";
+      try {
+        await api()
+          .post("/auth/register")
+          .send({ name: "Cy", email: `cy-${runId}@example.com`, password })
+          .expect(403);
+      } finally {
+        delete process.env.SIGNUP_ENABLED;
+      }
+    });
+
     it("gives the same 401 for a wrong password and an unknown email", async () => {
       const wrong = await api()
         .post("/auth/login")
