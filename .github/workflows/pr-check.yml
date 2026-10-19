@@ -64,7 +64,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
 
       - name: Cache Node Modules
         uses: actions/cache@v4
@@ -119,3 +119,17 @@ jobs:
           DATABASE_URL: postgres://chronicle:chronicle@localhost:5432/chronicle_ci
           DB_SSL: "false"
         run: npm run migration:check
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Run e2e tests
+        env:
+          DATABASE_URL: postgres://chronicle:chronicle@localhost:5432/chronicle_ci
+          DB_SSL: "false"
+          JWT_SECRET: ci-only-secret
+          SUPABASE_URL: http://localhost:54321
+          SUPABASE_SERVICE_ROLE_KEY: ci-only-key
+          SUPABASE_BUCKET: ci
+          NODE_ENV: test
+        run: npm run test:e2e -- --forceExit

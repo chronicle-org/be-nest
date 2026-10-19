@@ -1,15 +1,18 @@
 import {
+  ConflictException,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { QueryFailedError, Repository } from "typeorm";
 import { User } from "../user/user.entity";
 import * as bcrypt from "bcrypt";
+import { randomInt } from "crypto";
 import { JwtService } from "@nestjs/jwt";
 import { JwtPayload } from "./jwt.strategy";
 import { generateHandle } from "src/utils";
+import { PG_ERROR } from "src/utils/constant";
 import { NotificationSettings } from "../notifications/notification-settings.entity";
 import { baseDefaultSettingsValues } from "src/notifications/notification-settings.service";
 
@@ -21,6 +24,20 @@ export type TRegisterData = {
   name: string;
   email: string;
   password: string;
+};
+
+/** True when a save failed because `column` already holds that value. */
+const isUniqueViolation = (error: unknown, column: string): boolean => {
+  if (!(error instanceof QueryFailedError)) return false;
+  // TypeORM keeps the original pg error, which has the SQLSTATE code and a
+  // detail like "Key (email)=(a@x.com) already exists."
+  const { code, detail } = error.driverError as {
+    code?: string;
+    detail?: string;
+  };
+  return (
+    code === PG_ERROR.UNIQUE_VIOLATION && !!detail?.includes(`(${column})`)
+  );
 };
 
 @Injectable()
@@ -40,12 +57,17 @@ export class AuthService {
         throw new InternalServerErrorException("Password is required");
       const hashedPassword = await bcrypt.hash(data.password, saltRounds);
       const now = new Date();
+      // Handles are name + minute, so two people with the same name signing
+      // up in the same minute would collide; add a random suffix if taken.
+      let handle = generateHandle(data.name);
+      if (await this.repo.existsBy({ handle }))
+        handle = `${handle}${randomInt(1000, 10000)}`;
       const userData: Partial<User> = {
         name: data.name,
         email: data.email,
         password_hash: hashedPassword,
         created_at: now,
-        handle: generateHandle(data.name),
+        handle,
       };
       const user = this.repo.create(userData);
       const savedUser = await this.repo.save(user);
@@ -75,6 +97,8 @@ export class AuthService {
       return rest;
     } catch (error) {
       if (error instanceof InternalServerErrorException) throw error;
+      if (isUniqueViolation(error, "email"))
+        throw new ConflictException("Email is already registered");
       throw new InternalServerErrorException("Failed to create user");
     }
   }

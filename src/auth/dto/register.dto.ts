@@ -16,6 +16,7 @@ export class RegisterDto {
     description: "User email address",
   })
   @IsEmail({}, { message: "Invalid email format" })
+  @MaxLength(50, { message: "Email must not exceed 50 characters" })
   email: string;
 
   @ApiProperty({

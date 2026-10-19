@@ -39,3 +39,8 @@ The schema is managed by TypeORM migrations in `src/migrations`; the app applies
 - `npm run migration:revert` undoes the latest migration.
 
 Set `DB_SSL=false` when your local Postgres has no SSL.
+
+## 🧪 Tests
+
+- `npm test` runs the unit tests.
+- `npm run test:e2e` boots the whole app against the database in `DATABASE_URL` and exercises auth, posts, likes and follows over HTTP. Point it at a throwaway database: it creates users and posts (emails are unique per run, so it can be re-run). CI runs it against a fresh Postgres on every PR.

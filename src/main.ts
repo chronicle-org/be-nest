@@ -1,10 +1,8 @@
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
-import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
-import { ResponseInterceptor } from "./interceptors/response.interceptor";
-import cookieParser from "cookie-parser";
+import { configureApp } from "./setup-app";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -14,19 +12,7 @@ async function bootstrap() {
   // Behind Cloud Run's proxy: use the client IP from X-Forwarded-For for rate limiting.
   app.set("trust proxy", 1);
 
-  app.use(cookieParser());
-
-  // Global validation pipe
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    }),
-  );
+  configureApp(app);
 
   const corsOriginsString = process.env.CORS_ORIGIN;
   const allowedOrigins = corsOriginsString ? corsOriginsString.split(",") : [];
@@ -36,8 +22,6 @@ async function bootstrap() {
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
     credentials: true,
   });
-
-  app.useGlobalInterceptors(new ResponseInterceptor());
 
   // Swagger Setup
   const config = new DocumentBuilder()
