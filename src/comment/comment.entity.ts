@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
@@ -9,6 +10,8 @@ import {
 import { User } from "src/user/user.entity";
 import { Post } from "src/post/post.entity";
 
+@Index(["post_id"])
+@Index(["user_id"])
 @Entity()
 export class Comment {
   @PrimaryGeneratedColumn()

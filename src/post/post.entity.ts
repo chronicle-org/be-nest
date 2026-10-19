@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
@@ -10,6 +11,8 @@ import {
 import { User } from "src/user/user.entity";
 import { Comment } from "src/comment/comment.entity";
 
+// Profile post lists and drafts filter on both columns.
+@Index(["user_id", "is_draft"])
 @Entity()
 export class Post {
   @PrimaryGeneratedColumn()
