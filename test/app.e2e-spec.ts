@@ -112,6 +112,16 @@ describe("Chronicle API (e2e)", () => {
       expect(bodyOf(res).content.tags).toBe("nestjs,testing");
     });
 
+    it("strips scripts and unknown iframes from post HTML", async () => {
+      const id = await createPost(ann, {
+        content:
+          '<p>Hi<img src="x" onerror="alert(1)"></p><script>alert(1)</script>' +
+          '<iframe src="https://evil.example"></iframe>',
+      });
+      const res = await api().get(`/post/${id}`).expect(200);
+      expect(bodyOf(res).content.content).toBe('<p>Hi<img src="x" /></p>');
+    });
+
     it("hides drafts from everyone but the author", async () => {
       const id = await createPost(ann, { is_draft: true });
       await api().get(`/post/${id}`).expect(404);

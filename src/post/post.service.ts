@@ -12,6 +12,7 @@ import { Post } from "./post.entity";
 import { InteractionType } from "src/utils/types";
 import { User } from "src/user/user.entity";
 import { calculateReadingTime } from "src/utils";
+import { sanitizeRichText } from "src/utils/sanitize-html";
 import { addToJsonbArray, removeFromJsonbArray } from "src/utils/jsonb-array";
 import { NotificationGateway } from "src/notifications/notification.gateway";
 import { NotificationService } from "src/notifications/notification.service";
@@ -150,11 +151,11 @@ export class PostService {
 
     const postData: Partial<Post> = {
       user_id: data.user_id,
-      content: data.content,
+      content: sanitizeRichText(data.content),
       created_at: new Date(),
       updated_at: new Date(),
-      title: data.title,
-      sub_title: data.sub_title,
+      title: sanitizeRichText(data.title),
+      sub_title: sanitizeRichText(data.sub_title),
       thumbnail_url: data.thumbnail_url,
       tags: data.tags,
       is_draft: data.is_draft || false,
@@ -190,9 +191,9 @@ export class PostService {
       await this.repo.update(
         { id: data.id },
         {
-          content: data.content,
-          title: data.title,
-          sub_title: data.sub_title,
+          content: sanitizeRichText(data.content),
+          title: sanitizeRichText(data.title),
+          sub_title: sanitizeRichText(data.sub_title),
           thumbnail_url: data.thumbnail_url,
           tags: data.tags,
           updated_at: new Date(),
