@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { In, Repository } from "typeorm";
+import { FindOptionsOrder, FindOptionsWhere, In, Repository } from "typeorm";
 import { User } from "./user.entity";
 import { addToJsonbArray, removeFromJsonbArray } from "src/utils/jsonb-array";
 import { Post } from "../post/post.entity";
@@ -12,6 +12,7 @@ import { NotificationService } from "src/notifications/notification.service";
 import { NotificationSettingsService } from "src/notifications/notification-settings.service";
 import { NotificationGateway } from "src/notifications/notification.gateway";
 import { NotificationType } from "src/notifications/notification.entity";
+import { Page, PaginationQueryDto, toTakeSkip } from "src/utils/pagination";
 
 const FOLLOWING = {
   table: "user",
@@ -46,12 +47,12 @@ export class UserService {
     return this.findOne(id) as Promise<User>;
   }
 
-  findAll(): Promise<User[]> {
-    return this.repo.find({
-      order: {
-        id: "ASC",
-      },
+  async findAll(paging: PaginationQueryDto): Promise<Page<User>> {
+    const [data, total] = await this.repo.findAndCount({
+      order: { id: "ASC" },
+      ...toTakeSkip(paging),
     });
+    return { data, total };
   }
 
   async findOne(id: number): Promise<User | null> {
@@ -146,48 +147,52 @@ export class UserService {
     return this.findOne(follower_id) as Promise<User>;
   }
 
-  async following(user_id: number): Promise<User[]> {
+  async following(
+    user_id: number,
+    paging: PaginationQueryDto,
+  ): Promise<Page<User>> {
     const user = await this.findOne(user_id);
-    if (!user) throw new NotFoundException();
-    const following = await this.repo.find({
-      where: {
-        id: In(user.following),
-      },
-    });
-    return following;
+    return this.pageByIds(this.repo, user!.following, paging);
   }
 
-  async followers(user_id: number): Promise<User[]> {
+  async followers(
+    user_id: number,
+    paging: PaginationQueryDto,
+  ): Promise<Page<User>> {
     const user = await this.findOne(user_id);
-    if (!user) throw new NotFoundException();
-    const followers = await this.repo.find({
-      where: {
-        id: In(user.followers),
-      },
-    });
-    return followers;
+    return this.pageByIds(this.repo, user!.followers, paging);
   }
 
-  async likes(user_id: number): Promise<Post[]> {
+  async likes(
+    user_id: number,
+    paging: PaginationQueryDto,
+  ): Promise<Page<Post>> {
     const user = await this.findOne(user_id);
-    if (!user) throw new NotFoundException();
-    const likes = await this.postRepo.find({
-      where: {
-        id: In(user.likes),
-      },
-    });
-    return likes;
+    return this.pageByIds(this.postRepo, user!.likes, paging);
   }
 
-  async bookmarks(user_id: number): Promise<Post[]> {
+  async bookmarks(
+    user_id: number,
+    paging: PaginationQueryDto,
+  ): Promise<Page<Post>> {
     const user = await this.findOne(user_id);
-    if (!user) throw new NotFoundException();
-    const bookmarks = await this.postRepo.find({
-      where: {
-        id: In(user.bookmarks),
-      },
-      relations: ["user"],
+    return this.pageByIds(this.postRepo, user!.bookmarks, paging, ["user"]);
+  }
+
+  /** One page of the rows whose ids are in a user's jsonb id array, newest id first. */
+  private async pageByIds<T extends User | Post>(
+    repo: Repository<T>,
+    ids: number[],
+    paging: PaginationQueryDto,
+    relations: string[] = [],
+  ): Promise<Page<T>> {
+    if (!ids.length) return { data: [], total: 0 };
+    const [data, total] = await repo.findAndCount({
+      where: { id: In(ids) } as FindOptionsWhere<T>,
+      order: { id: "DESC" } as FindOptionsOrder<T>,
+      relations,
+      ...toTakeSkip(paging),
     });
-    return bookmarks;
+    return { data, total };
   }
 }

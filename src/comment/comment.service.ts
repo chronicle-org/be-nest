@@ -13,6 +13,7 @@ import { NotificationService } from "src/notifications/notification.service";
 import { NotificationSettingsService } from "src/notifications/notification-settings.service";
 import { NotificationGateway } from "src/notifications/notification.gateway";
 import { NotificationType } from "src/notifications/notification.entity";
+import { Page, PaginationQueryDto, toTakeSkip } from "src/utils/pagination";
 
 @Injectable()
 export class CommentService {
@@ -122,27 +123,35 @@ export class CommentService {
     return this.repo.findOneBy({ id: id }) as Promise<Comment>;
   }
 
-  async findByPostId(post_id: number): Promise<Comment[]> {
+  async findByPostId(
+    post_id: number,
+    paging: PaginationQueryDto,
+  ): Promise<Page<Comment>> {
     try {
-      const comments = await this.repo.find({
+      const [data, total] = await this.repo.findAndCount({
         where: { post_id },
         relations: ["user"],
-        order: {
-          id: "DESC",
-        },
+        order: { id: "DESC" },
+        ...toTakeSkip(paging),
       });
-      // Note: find() returns empty array if no results, not null
-      return comments;
+      return { data, total };
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       throw new InternalServerErrorException("Error fetching comments");
     }
   }
 
-  async findByPosterId(user_id: number): Promise<Comment[]> {
+  async findByPosterId(
+    user_id: number,
+    paging: PaginationQueryDto,
+  ): Promise<Page<Comment>> {
     try {
-      const comments = await this.repo.findBy({ user_id });
-      return comments;
+      const [data, total] = await this.repo.findAndCount({
+        where: { user_id },
+        order: { id: "DESC" },
+        ...toTakeSkip(paging),
+      });
+      return { data, total };
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       throw new InternalServerErrorException("Error fetching comments");

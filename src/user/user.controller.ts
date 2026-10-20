@@ -6,6 +6,7 @@ import {
   ParseIntPipe,
   Post,
   Put,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -21,6 +22,7 @@ import { Post as PostEntity } from "../post/post.entity";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "src/auth/jwt.strategy";
+import { Page, PaginationQueryDto } from "src/utils/pagination";
 
 @ApiTags("Users")
 @Controller("user")
@@ -28,10 +30,10 @@ export class UserController {
   constructor(private readonly service: UserService) {}
 
   @ApiOperation({ summary: "Get all users" })
-  @ApiResponse({ status: 200, description: "List of all users" })
+  @ApiResponse({ status: 200, description: "Paginated list of users" })
   @Get()
-  findAll(): Promise<User[]> {
-    return this.service.findAll();
+  findAll(@Query() paging: PaginationQueryDto): Promise<Page<User>> {
+    return this.service.findAll(paging);
   }
 
   @ApiOperation({ summary: "Get user by ID" })
@@ -81,34 +83,48 @@ export class UserController {
   }
 
   @ApiOperation({ summary: "Get users that a user is following" })
-  @ApiResponse({ status: 200, description: "List of followed users" })
+  @ApiResponse({ status: 200, description: "Paginated list of followed users" })
   @Get("/following/:user_id")
-  following(@Param("user_id", ParseIntPipe) user_id: number): Promise<User[]> {
-    return this.service.following(user_id);
+  following(
+    @Param("user_id", ParseIntPipe) user_id: number,
+    @Query() paging: PaginationQueryDto,
+  ): Promise<Page<User>> {
+    return this.service.following(user_id, paging);
   }
 
   @ApiOperation({ summary: "Get followers of a user" })
-  @ApiResponse({ status: 200, description: "List of followers" })
+  @ApiResponse({ status: 200, description: "Paginated list of followers" })
   @Get("/followers/:user_id")
-  followers(@Param("user_id", ParseIntPipe) user_id: number): Promise<User[]> {
-    return this.service.followers(user_id);
+  followers(
+    @Param("user_id", ParseIntPipe) user_id: number,
+    @Query() paging: PaginationQueryDto,
+  ): Promise<Page<User>> {
+    return this.service.followers(user_id, paging);
   }
 
   @ApiOperation({ summary: "Get posts liked by a user" })
-  @ApiResponse({ status: 200, description: "List of posts liked by user" })
+  @ApiResponse({
+    status: 200,
+    description: "Paginated list of posts liked by user",
+  })
   @Get("/likes/:user_id")
   likes(
     @Param("user_id", ParseIntPipe) user_id: number,
-  ): Promise<PostEntity[]> {
-    return this.service.likes(user_id);
+    @Query() paging: PaginationQueryDto,
+  ): Promise<Page<PostEntity>> {
+    return this.service.likes(user_id, paging);
   }
 
   @ApiOperation({ summary: "Get bookmarked posts of a user" })
-  @ApiResponse({ status: 200, description: "List of user's bookmarked posts" })
+  @ApiResponse({
+    status: 200,
+    description: "Paginated list of user's bookmarked posts",
+  })
   @Get("/bookmarks/:user_id")
   bookmarks(
     @Param("user_id", ParseIntPipe) user_id: number,
-  ): Promise<PostEntity[]> {
-    return this.service.bookmarks(user_id);
+    @Query() paging: PaginationQueryDto,
+  ): Promise<Page<PostEntity>> {
+    return this.service.bookmarks(user_id, paging);
   }
 }
