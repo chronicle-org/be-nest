@@ -4,11 +4,22 @@ import {
   Body,
   Res,
   ForbiddenException,
+  Put,
+  UseGuards,
 } from "@nestjs/common";
-import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
+import { ChangePasswordDto } from "./dto/change-password.dto";
+import { JwtAuthGuard } from "./jwt-auth.guard";
+import { CurrentUser } from "src/utils/decorator";
+import type { JwtPayload } from "./jwt.strategy";
 import { User } from "../user/user.entity";
 import type { Response } from "express";
 import { cookieName } from "./jwt.strategy";
@@ -59,6 +70,27 @@ export class AuthController {
     if (process.env.SIGNUP_ENABLED === "false")
       throw new ForbiddenException("Sign up is closed");
     return this.service.register(data);
+  }
+
+  @ApiOperation({ summary: "Change the current user's password" })
+  @ApiResponse({ status: 200, description: "Password changed" })
+  @ApiResponse({
+    status: 400,
+    description: "Invalid input, or the current password is incorrect",
+  })
+  @ApiBearerAuth("access-token")
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: RATE_LIMIT.AUTH.CHANGE_PASSWORD })
+  @Put("/password")
+  changePassword(
+    @Body() data: ChangePasswordDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<{ message: string }> {
+    return this.service.changePassword(
+      user.user_id,
+      data.current_password,
+      data.new_password,
+    );
   }
 
   @ApiOperation({ summary: "Logout user by clearing authentication cookie" })
