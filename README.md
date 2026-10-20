@@ -40,7 +40,13 @@ The schema is managed by TypeORM migrations in `src/migrations`; the app applies
 
 Set `DB_SSL=false` when your local Postgres has no SSL.
 
+Posts saved before HTML cleaning was added can be cleaned in place with `npm run posts:sanitize` (a dry run that lists what would change), then `npm run posts:sanitize -- --apply` to write. It uses `DATABASE_URL`, so point it at the database you mean to clean.
+
 Set `SIGNUP_ENABLED=false` to close sign up: `POST /auth/register` then returns 403. Unset or any other value keeps it open. Restart the app after changing it.
+
+## ❤️ Health check
+
+`GET /health` returns 200 `{ "status": "ok" }` when the API can reach its database, and 503 otherwise. CI's boot check uses it, and it can serve as Cloud Run's startup or liveness probe.
 
 ## 🧪 Tests
 

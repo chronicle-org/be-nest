@@ -23,6 +23,7 @@
     "migration:check": "npm run typeorm -- migration:generate --check src/migrations/Check",
     "migration:run": "npm run typeorm -- migration:run",
     "migration:revert": "npm run typeorm -- migration:revert",
+    "posts:sanitize": "ts-node -r tsconfig-paths/register scripts/sanitize-posts.ts",
     "generate:openapi": "ts-node generate-openapi.ts",
     "download:openapi": "node scripts/download-openapi.js"
   },
@@ -44,6 +45,7 @@
     "class-validator": "^0.15.1",
     "cookie": "^0.6.0",
     "cookie-parser": "^1.4.7",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "passport": "^0.7.0",

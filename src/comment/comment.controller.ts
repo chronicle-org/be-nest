@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Post,
   Put,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -22,6 +23,7 @@ import { UpdateCommentDto } from "./dto/comment.dto";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "src/auth/jwt.strategy";
+import { Page, PaginationQueryDto } from "src/utils/pagination";
 
 @ApiTags("Comments")
 @Controller("comment")
@@ -55,21 +57,29 @@ export class CommentController {
   }
 
   @ApiOperation({ summary: "Get all comments on a post" })
-  @ApiResponse({ status: 200, description: "List of comments on post" })
+  @ApiResponse({
+    status: 200,
+    description: "Paginated list of comments on post",
+  })
   @Get("/post/:post_id")
   findCommentsByPostId(
     @Param("post_id", ParseIntPipe) post_id: number,
-  ): Promise<Comment[]> {
-    return this.service.findByPostId(post_id);
+    @Query() paging: PaginationQueryDto,
+  ): Promise<Page<Comment>> {
+    return this.service.findByPostId(post_id, paging);
   }
 
   @ApiOperation({ summary: "Get all comments made by a user" })
-  @ApiResponse({ status: 200, description: "List of user's comments" })
+  @ApiResponse({
+    status: 200,
+    description: "Paginated list of user's comments",
+  })
   @Get("/user/:user_id")
   findCommentsByUserId(
     @Param("user_id", ParseIntPipe) user_id: number,
-  ): Promise<Comment[]> {
-    return this.service.findByPosterId(user_id);
+    @Query() paging: PaginationQueryDto,
+  ): Promise<Page<Comment>> {
+    return this.service.findByPosterId(user_id, paging);
   }
 
   @ApiOperation({ summary: "Delete a comment" })

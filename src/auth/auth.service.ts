@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   InternalServerErrorException,
@@ -135,5 +136,32 @@ export class AuthService {
     const token = this.jwtService.sign(tokenPayload);
 
     return { ...user, access_token: token };
+  }
+
+  async changePassword(
+    user_id: number,
+    current_password: string,
+    new_password: string,
+  ): Promise<{ message: string }> {
+    const user = await this.repo
+      .createQueryBuilder("user")
+      .addSelect("user.password_hash")
+      .where({ id: user_id })
+      .getOne();
+    if (!user) throw new UnauthorizedException();
+
+    // 400 rather than 401, so the web app doesn't treat it as a logged-out session.
+    if (!(await bcrypt.compare(current_password, user.password_hash)))
+      throw new BadRequestException("Current password is incorrect");
+    if (current_password === new_password)
+      throw new BadRequestException(
+        "New password must be different from the current one",
+      );
+
+    await this.repo.update(
+      { id: user_id },
+      { password_hash: await bcrypt.hash(new_password, 10) },
+    );
+    return { message: "Password changed" };
   }
 }
