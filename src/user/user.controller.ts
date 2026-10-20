@@ -20,6 +20,7 @@ import { User } from "./user.entity";
 import { UpdateUserDto } from "./dto/user.dto";
 import { Post as PostEntity } from "../post/post.entity";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
+import { OptionalJwtAuthGuard } from "src/auth/optional-jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "src/auth/jwt.strategy";
 import { Page, PaginationQueryDto } from "src/utils/pagination";
@@ -36,14 +37,21 @@ export class UserController {
     return this.service.findAll(paging);
   }
 
-  @ApiOperation({ summary: "Get user by ID" })
+  @ApiOperation({
+    summary: "Get user by ID",
+    description:
+      "Public, so profile pages can be previewed and indexed. The email is only included for logged-in viewers.",
+  })
   @ApiResponse({ status: 200, description: "User details" })
   @ApiResponse({ status: 404, description: "User not found" })
   @ApiBearerAuth("access-token")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Get("/:id")
-  find(@Param("id", ParseIntPipe) id: number): Promise<User | null> {
-    return this.service.findOne(id);
+  find(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentUser() viewer: JwtPayload | null,
+  ): Promise<User | null> {
+    return viewer ? this.service.findOne(id) : this.service.findPublic(id);
   }
 
   @ApiOperation({ summary: "Update current user profile" })

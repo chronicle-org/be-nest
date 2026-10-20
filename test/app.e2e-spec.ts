@@ -258,6 +258,20 @@ describe("Chronicle API (e2e)", () => {
     });
   });
 
+  describe("profiles", () => {
+    it("shows profiles to anyone but the email only to logged-in viewers", async () => {
+      const anon = await api().get(`/user/${ann.id}`).expect(200);
+      expect(bodyOf(anon).content.id).toBe(ann.id);
+      expect(bodyOf(anon).content.email).toBeUndefined();
+
+      const loggedIn = await api()
+        .get(`/user/${ann.id}`)
+        .set("Cookie", bob.cookie)
+        .expect(200);
+      expect(bodyOf(loggedIn).content.email).toBe(ann.email);
+    });
+  });
+
   describe("comments", () => {
     it("pages comments on a post, newest first", async () => {
       const postId = await createPost(ann);

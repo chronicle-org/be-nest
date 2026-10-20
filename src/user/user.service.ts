@@ -66,6 +66,13 @@ export class UserService {
     return userData;
   }
 
+  /** A profile without the email, for anonymous viewers. */
+  async findPublic(id: number): Promise<User> {
+    const userData = await this.repo.findOneBy({ id });
+    if (!userData) throw new NotFoundException();
+    return userData;
+  }
+
   async follow(follower_id: number, followee_id: number): Promise<User> {
     // Prevent self-follow
     if (follower_id === followee_id) {
