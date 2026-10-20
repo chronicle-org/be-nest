@@ -18,6 +18,8 @@ type ApiBody = {
   message: string;
 };
 const bodyOf = (res: { body: unknown }) => res.body as ApiBody;
+const pageOf = (res: { body: unknown }) =>
+  (res.body as { content: { data: { id: number }[]; total: number } }).content;
 
 describe("Chronicle API (e2e)", () => {
   let app: INestApplication<App>;
@@ -232,5 +234,87 @@ describe("Chronicle API (e2e)", () => {
         .post(`/user/follow/${ann.id}`)
         .set("Cookie", ann.cookie)
         .expect(400));
+
+    it("pages followers", async () => {
+      const cy = await registerAndLogin("Cy");
+      for (const follower of [bob, cy])
+        await api()
+          .post(`/user/follow/${ann.id}`)
+          .set("Cookie", follower.cookie)
+          .expect(201);
+
+      const first = pageOf(
+        await api().get(`/user/followers/${ann.id}?limit=1`).expect(200),
+      );
+      const second = pageOf(
+        await api().get(`/user/followers/${ann.id}?limit=1&page=2`).expect(200),
+      );
+      expect(first.total).toBe(2);
+      expect([first.data[0].id, second.data[0].id].sort()).toEqual(
+        [bob.id, cy.id].sort(),
+      );
+
+      await api().get(`/user/followers/${ann.id}?limit=51`).expect(400);
+    });
+  });
+
+  describe("comments", () => {
+    it("pages comments on a post, newest first", async () => {
+      const postId = await createPost(ann);
+      for (const content of ["first", "second", "third"])
+        await api()
+          .post("/comment")
+          .set("Cookie", bob.cookie)
+          .send({ post_id: postId, content })
+          .expect(201);
+
+      const res = await api()
+        .get(`/comment/post/${postId}?limit=2`)
+        .expect(200);
+      const page = pageOf(res) as unknown as {
+        data: { content: string }[];
+        total: number;
+      };
+      expect(page.total).toBe(3);
+      expect(page.data.map((c) => c.content)).toEqual(["third", "second"]);
+    });
+  });
+
+  describe("change password", () => {
+    it("changes the password after checking the current one", async () => {
+      const dee = await registerAndLogin("Dee");
+      const change = (current_password: string, new_password: string) =>
+        api()
+          .put("/auth/password")
+          .set("Cookie", dee.cookie)
+          .send({ current_password, new_password });
+
+      await change("wrong-password", "newSecret456").expect(400);
+      await change(password, password).expect(400);
+      await change(password, "newSecret456").expect(200);
+
+      await api()
+        .post("/auth/login")
+        .send({ email: dee.email, password })
+        .expect(401);
+      await api()
+        .post("/auth/login")
+        .send({ email: dee.email, password: "newSecret456" })
+        .expect(201);
+    });
+
+    it("requires a login", () =>
+      api()
+        .put("/auth/password")
+        .send({ current_password: password, new_password: "newSecret456" })
+        .expect(401));
+  });
+
+  describe("health", () => {
+    it("reports ok with security headers", async () => {
+      const res = await api().get("/health").expect(200);
+      expect(bodyOf(res).content).toEqual({ status: "ok" });
+      expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    });
   });
 });

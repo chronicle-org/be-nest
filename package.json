@@ -23,6 +23,7 @@
     "migration:check": "npm run typeorm -- migration:generate --check src/migrations/Check",
     "migration:run": "npm run typeorm -- migration:run",
     "migration:revert": "npm run typeorm -- migration:revert",
+    "posts:sanitize": "ts-node -r tsconfig-paths/register scripts/sanitize-posts.ts",
     "generate:openapi": "ts-node generate-openapi.ts",
     "download:openapi": "node scripts/download-openapi.js"
   },
