@@ -11,6 +11,7 @@ import { getDataSourceOptions } from "./database/options";
 import { RATE_LIMIT } from "./utils/constant";
 import { FileModule } from "./file/file.module";
 import { NotificationModule } from "./notifications/notification.module";
+import { HealthController } from "./health/health.controller";
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { NotificationModule } from "./notifications/notification.module";
     FileModule,
     NotificationModule,
   ],
+  controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

@@ -99,7 +99,7 @@ jobs:
 
           echo "Waiting for server to boot (20 seconds max)..."
           for i in {1..10}; do
-            if curl -s http://localhost:3000 > /dev/null; then
+            if curl -sf http://localhost:3000/health > /dev/null; then
               echo "✅ Server started successfully after $((i*2)) seconds"
               kill $SERVER_PID 2>/dev/null || true
               exit 0
