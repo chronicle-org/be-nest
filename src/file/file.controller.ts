@@ -11,14 +11,9 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { FileService } from "./file.service";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import { fileUploadKey } from "src/utils/constant";
+import { ALLOWED_IMAGE_TYPES, matchesImageType } from "./image-signature";
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-const ALLOWED_IMAGE_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-];
 
 @Controller("file")
 export class FileController {
@@ -48,6 +43,10 @@ export class FileController {
     if (!(type in fileUploadKey))
       throw new BadRequestException("Invalid upload type");
     if (!file) throw new BadRequestException("No attached file");
+    if (!matchesImageType(file.buffer, file.mimetype))
+      throw new BadRequestException(
+        "File content doesn't match its image type",
+      );
     const url = await this.supabaseService.uploadImage(file, type);
     return { url };
   }
