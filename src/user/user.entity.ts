@@ -23,6 +23,10 @@ export class User {
   @Column({ length: 255, select: false })
   password_hash: string;
 
+  // Bumped on password change; login tokens carry it as `tv`, so older tokens stop working.
+  @Column({ default: 0, select: false })
+  token_version: number;
+
   @CreateDateColumn({ type: "timestamp" })
   created_at: Date;
 

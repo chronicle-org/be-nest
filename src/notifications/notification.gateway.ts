@@ -15,7 +15,13 @@ import { In, Repository } from "typeorm";
 import { Notification } from "./notification.entity";
 import { Server, Socket } from "socket.io";
 import * as jwt from "jsonwebtoken";
-import { cookieName, getJwtSecret, JwtPayload } from "src/auth/jwt.strategy";
+import {
+  cookieName,
+  getJwtSecret,
+  isTokenCurrent,
+  JwtPayload,
+} from "src/auth/jwt.strategy";
+import { User } from "src/user/user.entity";
 
 const parseCorsOrigins = (): string[] => {
   const rawCorsOrigin = process.env.CORS_ORIGIN;
@@ -72,6 +78,11 @@ export class NotificationGateway
   private tokenValidationInterval: NodeJS.Timeout;
 
   private extractUserIdFromSocket(socket: Socket): number | null {
+    return this.extractPayloadFromSocket(socket)?.user_id ?? null;
+  }
+
+  /** Signature and expiry are checked here; the password-change version needs the database. */
+  private extractPayloadFromSocket(socket: Socket): JwtPayload | null {
     try {
       const cookieHeader = socket.handshake.headers.cookie || "";
 
@@ -86,14 +97,20 @@ export class NotificationGateway
 
       if (!token) return null;
 
-      const payload = jwt.verify(token, getJwtSecret(), {
+      return jwt.verify(token, getJwtSecret(), {
         algorithms: ["HS256"],
       }) as JwtPayload;
-      return payload.user_id;
     } catch (error) {
       console.error("Auth error:", error);
       return null;
     }
+  }
+
+  /** False once the user has changed their password since this socket's token was issued. */
+  private async isSocketTokenCurrent(socket: Socket): Promise<boolean> {
+    const payload = this.extractPayloadFromSocket(socket);
+    if (!payload) return false;
+    return isTokenCurrent(this.repo.manager.getRepository(User), payload);
   }
 
   private validateSocketToken(socket: Socket): boolean {
@@ -114,12 +131,19 @@ export class NotificationGateway
       () => {
         if (!this.server?.sockets?.sockets) return;
         this.server.sockets.sockets.forEach((socket) => {
-          if (!this.validateSocketToken(socket)) {
+          void (async () => {
+            const valid =
+              this.validateSocketToken(socket) &&
+              (await this.isSocketTokenCurrent(socket));
+            if (valid) return;
+            socket.disconnect();
             const userId = (socket.data as SocketData)["userId"];
             if (userId) {
               this.userSockets.get(userId)?.delete(socket.id);
             }
-          }
+          })().catch((error) =>
+            console.error("Socket token check failed:", error),
+          );
         });
       },
       5 * 60 * 1000,
@@ -134,7 +158,7 @@ export class NotificationGateway
 
   async handleConnection(socket: Socket) {
     const userId = this.extractUserIdFromSocket(socket);
-    if (!userId) {
+    if (!userId || !(await this.isSocketTokenCurrent(socket))) {
       socket.disconnect();
       return;
     }

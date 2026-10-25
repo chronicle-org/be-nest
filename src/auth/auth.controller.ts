@@ -26,6 +26,14 @@ import { cookieName } from "./jwt.strategy";
 import { Throttle } from "@nestjs/throttler";
 import { RATE_LIMIT } from "src/utils/constant";
 
+const setAuthCookie = (res: Response, token: string) =>
+  res.cookie(cookieName, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    maxAge: 24 * 60 * 60 * 1000,
+  });
+
 @ApiTags("Auth")
 @Controller("auth")
 export class AuthController {
@@ -44,14 +52,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<User | null | string> {
     const userData = await this.service.login(data);
-
-    res.cookie(cookieName, userData.access_token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 24 * 60 * 60 * 1000,
-    });
-
+    setAuthCookie(res, userData.access_token);
     return userData;
   }
 
@@ -73,7 +74,11 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: "Change the current user's password" })
-  @ApiResponse({ status: 200, description: "Password changed" })
+  @ApiResponse({
+    status: 200,
+    description:
+      "Password changed. Other sessions are logged out; this one gets a new cookie.",
+  })
   @ApiResponse({
     status: 400,
     description: "Invalid input, or the current password is incorrect",
@@ -82,15 +87,19 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Throttle({ default: RATE_LIMIT.AUTH.CHANGE_PASSWORD })
   @Put("/password")
-  changePassword(
+  async changePassword(
     @Body() data: ChangePasswordDto,
     @CurrentUser() user: JwtPayload,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<{ message: string }> {
-    return this.service.changePassword(
+    const { access_token } = await this.service.changePassword(
       user.user_id,
       data.current_password,
       data.new_password,
     );
+    // Other devices are now logged out; keep this one logged in.
+    setAuthCookie(res, access_token);
+    return { message: "Password changed" };
   }
 
   @ApiOperation({ summary: "Logout user by clearing authentication cookie" })

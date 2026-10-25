@@ -317,11 +317,45 @@ describe("Chronicle API (e2e)", () => {
         .expect(201);
     });
 
+    it("logs out older sessions but keeps this one logged in", async () => {
+      const eve = await registerAndLogin("Eve");
+      const drafts = (cookie: string) =>
+        api().get(`/post/user/${eve.id}/drafts`).set("Cookie", cookie);
+      await drafts(eve.cookie).expect(200);
+
+      const res = await api()
+        .put("/auth/password")
+        .set("Cookie", eve.cookie)
+        .send({ current_password: password, new_password: "newSecret456" })
+        .expect(200);
+      const setCookie = res.headers["set-cookie"] as unknown as string[];
+      const newCookie = setCookie.map((c) => c.split(";")[0]).join("; ");
+
+      await drafts(eve.cookie).expect(401);
+      await drafts(newCookie).expect(200);
+    });
+
     it("requires a login", () =>
       api()
         .put("/auth/password")
         .send({ current_password: password, new_password: "newSecret456" })
         .expect(401));
+  });
+
+  describe("uploads", () => {
+    it("rejects a file whose content isn't the image type it claims", async () => {
+      const res = await api()
+        .post("/file?type=1")
+        .set("Cookie", ann.cookie)
+        .attach("file", Buffer.from("<html><script>alert(1)</script>"), {
+          filename: "cat.png",
+          contentType: "image/png",
+        })
+        .expect(400);
+      expect(bodyOf(res).message).toBe(
+        "File content doesn't match its image type",
+      );
+    });
   });
 
   describe("health", () => {
