@@ -115,6 +115,7 @@ export class AuthService {
       .createQueryBuilder("user")
       .addSelect("user.password_hash")
       .addSelect("user.email")
+      .addSelect("user.token_version")
       .where({ email })
       .getOne();
 
@@ -127,25 +128,24 @@ export class AuthService {
     if (!user || !passwordValid)
       throw new UnauthorizedException("Invalid credentials");
 
-    delete (user as Partial<User>).password_hash;
+    const { password_hash: _, token_version, ...profile } = user;
+    const token = this.signToken(user.id, user.email, token_version);
 
-    const tokenPayload: JwtPayload = {
-      user_id: user.id,
-      email: user.email,
+    return { ...profile, access_token: token } as User & {
+      access_token: string;
     };
-    const token = this.jwtService.sign(tokenPayload);
-
-    return { ...user, access_token: token };
   }
 
   async changePassword(
     user_id: number,
     current_password: string,
     new_password: string,
-  ): Promise<{ message: string }> {
+  ): Promise<{ access_token: string }> {
     const user = await this.repo
       .createQueryBuilder("user")
       .addSelect("user.password_hash")
+      .addSelect("user.email")
+      .addSelect("user.token_version")
       .where({ id: user_id })
       .getOne();
     if (!user) throw new UnauthorizedException();
@@ -158,10 +158,19 @@ export class AuthService {
         "New password must be different from the current one",
       );
 
+    // A new token version logs out every other device; this one gets a fresh token.
+    const token_version = user.token_version + 1;
     await this.repo.update(
       { id: user_id },
-      { password_hash: await bcrypt.hash(new_password, 10) },
+      { password_hash: await bcrypt.hash(new_password, 10), token_version },
     );
-    return { message: "Password changed" };
+    return {
+      access_token: this.signToken(user.id, user.email, token_version),
+    };
+  }
+
+  private signToken(user_id: number, email: string, tv: number): string {
+    const payload: JwtPayload = { user_id, email, tv };
+    return this.jwtService.sign(payload);
   }
 }
