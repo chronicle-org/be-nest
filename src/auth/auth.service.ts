@@ -16,6 +16,7 @@ import { generateHandle } from "src/utils";
 import { PG_ERROR } from "src/utils/constant";
 import { NotificationSettings } from "../notifications/notification-settings.entity";
 import { baseDefaultSettingsValues } from "src/notifications/notification-settings.service";
+import { removeFromAllJsonbArrays } from "src/utils/jsonb-array";
 
 // bcrypt hash of a random string, compared against when the email is unknown.
 const DUMMY_HASH =
@@ -167,6 +168,79 @@ export class AuthService {
     return {
       access_token: this.signToken(user.id, user.email, token_version),
     };
+  }
+
+  /**
+   * Deletes the account with its posts, comments and notifications, and takes
+   * it out of other people's follower lists and posts' likes and bookmarks.
+   */
+  async deleteAccount(user_id: number, password: string): Promise<void> {
+    const user = await this.repo
+      .createQueryBuilder("user")
+      .addSelect("user.password_hash")
+      .where({ id: user_id })
+      .getOne();
+    if (!user) throw new UnauthorizedException();
+    // 400 rather than 401, so the web app doesn't treat it as a logged-out session.
+    if (!(await bcrypt.compare(password, user.password_hash)))
+      throw new BadRequestException("Password is incorrect");
+
+    await this.repo.manager.transaction(async (manager) => {
+      const ownPosts: { id: number }[] = await manager.query(
+        `SELECT id FROM "post" WHERE user_id = $1`,
+        [user_id],
+      );
+      const postIds = ownPosts.map((post) => post.id);
+
+      // Comments on other people's posts; the ones on the user's own posts go with them.
+      await manager.query(
+        `UPDATE "post" p
+         SET comment_count = GREATEST(p.comment_count - c.n, 0)
+         FROM (SELECT post_id, COUNT(*)::int AS n FROM "comment"
+               WHERE user_id = $1 GROUP BY post_id) c
+         WHERE p.id = c.post_id`,
+        [user_id],
+      );
+      await manager.query(`DELETE FROM "comment" WHERE user_id = $1`, [
+        user_id,
+      ]);
+      await manager.query(
+        `DELETE FROM "notification" WHERE actor_id = $1 OR recipient_id = $1`,
+        [user_id],
+      );
+
+      for (const [column, countColumn] of [
+        ["following", "following_count"],
+        ["followers", "followers_count"],
+      ])
+        await removeFromAllJsonbArrays(
+          manager,
+          { table: "user", column, countColumn },
+          [user_id],
+        );
+      for (const [column, countColumn] of [
+        ["likes", "likes_count"],
+        ["bookmarks", "bookmarks_count"],
+      ]) {
+        await removeFromAllJsonbArrays(
+          manager,
+          { table: "post", column, countColumn },
+          [user_id],
+        );
+        await removeFromAllJsonbArrays(
+          manager,
+          { table: "user", column, countColumn },
+          postIds,
+        );
+      }
+
+      await manager.query(`DELETE FROM "post" WHERE user_id = $1`, [user_id]);
+      await manager.query(
+        `DELETE FROM "notification_settings" WHERE user_id = $1`,
+        [user_id],
+      );
+      await manager.query(`DELETE FROM "user" WHERE id = $1`, [user_id]);
+    });
   }
 
   private signToken(user_id: number, email: string, tv: number): string {

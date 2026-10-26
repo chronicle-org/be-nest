@@ -5,6 +5,7 @@ import {
   Res,
   ForbiddenException,
   Put,
+  Delete,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -17,6 +18,7 @@ import { AuthService } from "./auth.service";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
+import { DeleteAccountDto } from "./dto/delete-account.dto";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "./jwt.strategy";
@@ -100,6 +102,27 @@ export class AuthController {
     // Other devices are now logged out; keep this one logged in.
     setAuthCookie(res, access_token);
     return { message: "Password changed" };
+  }
+
+  @ApiOperation({
+    summary: "Delete the current user's account",
+    description:
+      "Deletes the account with its posts, comments and notifications, and logs out. Needs the current password.",
+  })
+  @ApiResponse({ status: 200, description: "Account deleted" })
+  @ApiResponse({ status: 400, description: "The password is incorrect" })
+  @ApiBearerAuth("access-token")
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: RATE_LIMIT.AUTH.DELETE_ACCOUNT })
+  @Delete("/account")
+  async deleteAccount(
+    @Body() data: DeleteAccountDto,
+    @CurrentUser() user: JwtPayload,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ message: string }> {
+    await this.service.deleteAccount(user.user_id, data.password);
+    res.clearCookie(cookieName);
+    return { message: "Account deleted" };
   }
 
   @ApiOperation({ summary: "Logout user by clearing authentication cookie" })

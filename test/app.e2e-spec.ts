@@ -1,5 +1,6 @@
 import { Test } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import request from "supertest";
 import type { App } from "supertest/types";
 import { AppModule } from "../src/app.module";
@@ -28,14 +29,20 @@ describe("Chronicle API (e2e)", () => {
 
   const api = () => request(app.getHttpServer());
 
+  // Each user signs up from its own address, so making many test users
+  // doesn't hit the per-address sign-up and login rate limits.
+  let userCount = 0;
   async function registerAndLogin(name: string): Promise<TestUser> {
     const email = `${name.toLowerCase()}-${runId}@example.com`;
+    const ip = `10.0.0.${++userCount}`;
     await api()
       .post("/auth/register")
+      .set("X-Forwarded-For", ip)
       .send({ name, email, password })
       .expect(201);
     const res = await api()
       .post("/auth/login")
+      .set("X-Forwarded-For", ip)
       .send({ email, password })
       .expect(201);
     const setCookie = res.headers["set-cookie"] as unknown as string[];
@@ -62,7 +69,9 @@ describe("Chronicle API (e2e)", () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<NestExpressApplication>();
+    // Read the client address from X-Forwarded-For, as behind Cloud Run.
+    (app as unknown as NestExpressApplication).set("trust proxy", true);
     configureApp(app);
     await app.init();
 
@@ -340,6 +349,119 @@ describe("Chronicle API (e2e)", () => {
         .put("/auth/password")
         .send({ current_password: password, new_password: "newSecret456" })
         .expect(401));
+  });
+
+  describe("follow suggestions", () => {
+    it("suggests people your follows follow, never yourself or people you follow", async () => {
+      const [fay, gus, hal, ivy] = await Promise.all(
+        ["Fay", "Gus", "Hal", "Ivy"].map((name) => registerAndLogin(name)),
+      );
+      const follow = (who: TestUser, whom: TestUser) =>
+        api()
+          .post(`/user/follow/${whom.id}`)
+          .set("Cookie", who.cookie)
+          .expect(201);
+      // Fay follows Gus and Hal; both follow Ivy, and Gus follows Hal.
+      await follow(fay, gus);
+      await follow(fay, hal);
+      await follow(gus, ivy);
+      await follow(hal, ivy);
+      await follow(gus, hal);
+      await follow(ivy, fay);
+
+      const res = await api()
+        .get("/user/suggestions?limit=5")
+        .set("Cookie", fay.cookie)
+        .expect(200);
+      const ids = (res.body as { content: { id: number }[] }).content.map(
+        (u) => u.id,
+      );
+      expect(ids[0]).toBe(ivy.id);
+      expect(ids).toHaveLength(5);
+      expect(ids).not.toContain(fay.id);
+      expect(ids).not.toContain(gus.id);
+      expect(ids).not.toContain(hal.id);
+
+      // Anyone can get suggestions; they're the most-followed users.
+      const anon = await api().get("/user/suggestions?limit=2").expect(200);
+      expect((anon.body as { content: unknown[] }).content).toHaveLength(2);
+    });
+  });
+
+  describe("delete account", () => {
+    it("needs the password, then removes the user everywhere", async () => {
+      const kim = await registerAndLogin("Kim");
+      const lee = await registerAndLogin("Lee");
+      const kimPost = await createPost(kim);
+      const leePost = await createPost(lee);
+
+      await api()
+        .post(`/user/follow/${lee.id}`)
+        .set("Cookie", kim.cookie)
+        .expect(201);
+      await api()
+        .post(`/user/follow/${kim.id}`)
+        .set("Cookie", lee.cookie)
+        .expect(201);
+      await api()
+        .put(`/post/interaction/like/${leePost}`)
+        .set("Cookie", kim.cookie)
+        .expect(200);
+      await api()
+        .put(`/post/interaction/bookmark/${kimPost}`)
+        .set("Cookie", lee.cookie)
+        .expect(200);
+      await api()
+        .post("/comment")
+        .set("Cookie", kim.cookie)
+        .send({ post_id: leePost, content: "nice" })
+        .expect(201);
+      await api()
+        .post("/comment")
+        .set("Cookie", lee.cookie)
+        .send({ post_id: kimPost, content: "hi" })
+        .expect(201);
+
+      await api()
+        .delete("/auth/account")
+        .set("Cookie", kim.cookie)
+        .send({ password: "wrong-password" })
+        .expect(400);
+      await api()
+        .delete("/auth/account")
+        .set("Cookie", kim.cookie)
+        .send({ password })
+        .expect(200);
+
+      await api().get(`/user/${kim.id}`).expect(404);
+      await api().get(`/post/${kimPost}`).expect(404);
+      await api()
+        .post("/auth/login")
+        .send({ email: kim.email, password })
+        .expect(401);
+      await api()
+        .get(`/post/user/${kim.id}/drafts`)
+        .set("Cookie", kim.cookie)
+        .expect(401);
+
+      const leeUser = bodyOf(
+        await api().get(`/user/${lee.id}`).set("Cookie", lee.cookie),
+      ).content;
+      expect(leeUser.followers).toEqual([]);
+      expect(leeUser.followers_count).toBe(0);
+      expect(leeUser.following).toEqual([]);
+      expect(leeUser.following_count).toBe(0);
+      expect(leeUser.bookmarks).toEqual([]);
+      expect(leeUser.bookmarks_count).toBe(0);
+
+      const leePostBody = bodyOf(await api().get(`/post/${leePost}`)).content;
+      expect(leePostBody.likes).toEqual([]);
+      expect(leePostBody.likes_count).toBe(0);
+      expect(leePostBody.comment_count).toBe(0);
+    });
+
+    it("requires a login", () =>
+      api().delete("/auth/account").send({ password }).expect(401));
   });
 
   describe("uploads", () => {

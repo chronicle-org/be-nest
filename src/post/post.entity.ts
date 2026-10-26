@@ -13,6 +13,10 @@ import { Comment } from "src/comment/comment.entity";
 
 // Profile post lists and drafts filter on both columns.
 @Index(["user_id", "is_draft"])
+// Trigram indexes for search, managed by a migration (TypeORM can't express them).
+@Index("IDX_post_title_trgm", { synchronize: false })
+@Index("IDX_post_sub_title_trgm", { synchronize: false })
+@Index("IDX_post_tags_trgm", { synchronize: false })
 @Entity()
 export class Post {
   @PrimaryGeneratedColumn()
