@@ -1,4 +1,11 @@
-import { IsString, MaxLength, IsOptional, IsUrl } from "class-validator";
+import {
+  IsString,
+  MaxLength,
+  IsOptional,
+  IsUrl,
+  Max,
+  Min,
+} from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 
 export class CreateUserDto {
@@ -85,4 +92,18 @@ export class UpdateUserDto {
   @IsString()
   @MaxLength(100)
   tags?: string;
+}
+
+export class SuggestionsQueryDto {
+  @ApiProperty({
+    description: "How many users to suggest",
+    example: 20,
+    required: false,
+    minimum: 1,
+    maximum: 50,
+  })
+  @IsOptional()
+  @Min(1)
+  @Max(50)
+  limit: number = 20;
 }

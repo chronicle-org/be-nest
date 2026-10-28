@@ -17,7 +17,7 @@ import {
 } from "@nestjs/swagger";
 import { UserService } from "./user.service";
 import { User } from "./user.entity";
-import { UpdateUserDto } from "./dto/user.dto";
+import { SuggestionsQueryDto, UpdateUserDto } from "./dto/user.dto";
 import { Post as PostEntity } from "../post/post.entity";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import { OptionalJwtAuthGuard } from "src/auth/optional-jwt-auth.guard";
@@ -35,6 +35,22 @@ export class UserController {
   @Get()
   findAll(@Query() paging: PaginationQueryDto): Promise<Page<User>> {
     return this.service.findAll(paging);
+  }
+
+  @ApiOperation({
+    summary: "Suggest people to follow",
+    description:
+      "For logged-in viewers, people followed by the people they follow come first. Never includes the viewer or anyone they already follow.",
+  })
+  @ApiResponse({ status: 200, description: "List of suggested users" })
+  @ApiBearerAuth("access-token")
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get("/suggestions")
+  suggestions(
+    @Query() query: SuggestionsQueryDto,
+    @CurrentUser() viewer: JwtPayload | null,
+  ): Promise<User[]> {
+    return this.service.suggestions(viewer?.user_id ?? null, query.limit);
   }
 
   @ApiOperation({

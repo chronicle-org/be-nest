@@ -48,3 +48,24 @@ export async function removeFromJsonbArray(
   );
   return result[1] > 0;
 }
+
+/** Removes every one of values from the array in all rows of the table, keeping the counter in step. */
+export async function removeFromAllJsonbArrays(
+  manager: EntityManager,
+  { table, column, countColumn }: ArrayColumn,
+  values: number[],
+): Promise<void> {
+  if (!values.length) return;
+  const matches = `FROM jsonb_array_elements("${column}") e WHERE (e)::int = ANY($1::int[])`;
+  await manager.query(
+    `UPDATE "${table}"
+     SET "${column}" = (
+           SELECT COALESCE(jsonb_agg(e), '[]'::jsonb)
+           FROM jsonb_array_elements("${column}") e
+           WHERE NOT ((e)::int = ANY($1::int[]))
+         ),
+         "${countColumn}" = GREATEST("${countColumn}" - (SELECT COUNT(*) ${matches}), 0)
+     WHERE EXISTS (SELECT 1 ${matches})`,
+    [values],
+  );
+}

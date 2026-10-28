@@ -4,7 +4,13 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { FindOptionsOrder, FindOptionsWhere, In, Repository } from "typeorm";
+import {
+  FindOptionsOrder,
+  FindOptionsWhere,
+  In,
+  Not,
+  Repository,
+} from "typeorm";
 import { User } from "./user.entity";
 import { addToJsonbArray, removeFromJsonbArray } from "src/utils/jsonb-array";
 import { Post } from "../post/post.entity";
@@ -71,6 +77,54 @@ export class UserService {
     const userData = await this.repo.findOneBy({ id });
     if (!userData) throw new NotFoundException();
     return userData;
+  }
+
+  /**
+   * People to follow: for a logged-in viewer, those followed by the people they
+   * follow (most shared connections first), then the most-followed users.
+   * Never the viewer or anyone they already follow.
+   */
+  async suggestions(viewer_id: number | null, limit: number): Promise<User[]> {
+    const viewer = viewer_id
+      ? await this.repo.findOneBy({ id: viewer_id })
+      : null;
+    const exclude = new Set<number>(
+      viewer ? [viewer.id, ...viewer.following] : [],
+    );
+
+    const ids: number[] = [];
+    if (viewer?.following.length) {
+      const rows: { id: number }[] = await this.repo.query(
+        `SELECT (e)::int AS id
+         FROM "user" f CROSS JOIN LATERAL jsonb_array_elements(f.following) e
+         WHERE f.followers @> jsonb_build_array($1::int)
+         GROUP BY 1
+         ORDER BY COUNT(*) DESC, 1 DESC
+         LIMIT $2`,
+        [viewer.id, limit + exclude.size],
+      );
+      for (const { id } of rows)
+        if (!exclude.has(id) && ids.length < limit) ids.push(id);
+    }
+
+    const byId = new Map(
+      (ids.length ? await this.repo.findBy({ id: In(ids) }) : []).map((u) => [
+        u.id,
+        u,
+      ]),
+    );
+    const result = ids.flatMap((id) => byId.get(id) ?? []);
+
+    if (result.length < limit) {
+      const skip = [...exclude, ...ids];
+      const popular = await this.repo.find({
+        where: skip.length ? { id: Not(In(skip)) } : {},
+        order: { followers_count: "DESC", id: "DESC" },
+        take: limit - result.length,
+      });
+      result.push(...popular);
+    }
+    return result;
   }
 
   async follow(follower_id: number, followee_id: number): Promise<User> {
