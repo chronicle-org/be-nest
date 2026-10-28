@@ -156,10 +156,12 @@ export class PostController {
   @ApiResponse({ status: 200, description: "Counter incremented" })
   @Throttle({ default: RATE_LIMIT.POST.COUNTER })
   @Put("/counter/:action/:post_id")
+  @UseGuards(OptionalJwtAuthGuard)
   incrementCounter(
     @Param("action") action: "share" | "view",
     @Param("post_id", ParseIntPipe) post_id: number,
+    @CurrentUser() user: JwtPayload | null,
   ): Promise<PostEntity> {
-    return this.service.incrementPostCount(post_id, action);
+    return this.service.incrementPostCount(post_id, action, user?.user_id);
   }
 }

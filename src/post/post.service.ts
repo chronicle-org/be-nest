@@ -188,6 +188,8 @@ export class PostService {
         ? calculateReadingTime(data.content)
         : postData.reading_time;
 
+      const isPublishing = postData.is_draft && data.is_draft === false;
+
       await this.repo.update(
         { id: data.id },
         {
@@ -203,7 +205,9 @@ export class PostService {
           reading_time: readingTime,
         },
       );
-      return this.repo.findOneBy({ id: data.id! }) as Promise<Post>;
+      const updated = (await this.repo.findOneBy({ id: data.id! })) as Post;
+      if (isPublishing) this.notifyFollowersOfPublish(updated);
+      return updated;
     } catch (error) {
       if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException("Error updating post");
@@ -284,6 +288,7 @@ export class PostService {
       post.is_draft = false;
       post.updated_at = new Date();
       await this.repo.save(post);
+      this.notifyFollowersOfPublish(post);
       return post;
     } catch (error) {
       if (error instanceof HttpException) throw error;
@@ -391,9 +396,16 @@ export class PostService {
   async incrementPostCount(
     post_id: number,
     action: "share" | "view",
+    viewer_id?: number,
   ): Promise<Post> {
     const countField = action === "share" ? "share_count" : "view_count";
     try {
+      // Writers reading their own post shouldn't inflate its view count.
+      if (action === "view" && viewer_id !== undefined) {
+        const post = await this.repo.findOneBy({ id: post_id });
+        if (!post) throw new NotFoundException("Post not found");
+        if (post.user_id === viewer_id) return post;
+      }
       const result = await this.repo.increment({ id: post_id }, countField, 1);
       if (!result.affected) throw new NotFoundException("Post not found");
       return this.repo.findOneByOrFail({ id: post_id });
@@ -401,6 +413,21 @@ export class PostService {
       if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException(`Error ${action} post`);
     }
+  }
+
+  /**
+   * Tells followers about a draft that just went public. Posts created as
+   * published notify from create(); drafts only notify once they're published.
+   */
+  private notifyFollowersOfPublish(post: Post): void {
+    this.runAsync(async () => {
+      const author = await this.userRepo.findOne({
+        where: { id: post.user_id },
+      });
+      if (!author) return;
+      post.user = author;
+      this.sendFollowerNotifications(post);
+    }, "Failed to load author for publish notifications");
   }
 
   private sendFollowerNotifications(post: Post): void {
