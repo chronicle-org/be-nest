@@ -20,6 +20,9 @@ export const RATE_LIMIT = {
     REGISTER: { ttl: ONE_MINUTE_MS, limit: 10 },
     CHANGE_PASSWORD: { ttl: ONE_MINUTE_MS, limit: 10 },
     DELETE_ACCOUNT: { ttl: ONE_MINUTE_MS, limit: 10 },
+    // Each request can send an email, so keep this low.
+    FORGOT_PASSWORD: { ttl: ONE_MINUTE_MS, limit: 3 },
+    RESET_PASSWORD: { ttl: ONE_MINUTE_MS, limit: 10 },
   },
   POST: {
     // Public view/share counter; callable without logging in.

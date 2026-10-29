@@ -44,6 +44,8 @@ Posts saved before HTML cleaning was added can be cleaned in place with `npm run
 
 Set `SIGNUP_ENABLED=false` to close sign up: `POST /auth/register` then returns 403. Unset or any other value keeps it open. Restart the app after changing it.
 
+Password reset by email (`POST /auth/forgot-password`, then `POST /auth/reset-password`) sends through [Resend](https://resend.com). Set `RESEND_API_KEY`, `MAIL_FROM` (a sender on a domain verified in Resend, e.g. `Chronicle <hello@yourdomain.com>`) and `WEB_URL` (the web app's address, used for the link; defaults to the first `CORS_ORIGIN`). Until they're set, forgot password returns 503 and nothing is sent. Reset links last 30 minutes, work once, and log out every device.
+
 ## ❤️ Health check
 
 `GET /health` returns 200 `{ "status": "ok" }` when the API can reach its database, and 503 otherwise. CI's boot check uses it, and it can serve as Cloud Run's startup or liveness probe.

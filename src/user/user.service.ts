@@ -14,6 +14,7 @@ import {
 import { User } from "./user.entity";
 import { addToJsonbArray, removeFromJsonbArray } from "src/utils/jsonb-array";
 import { Post } from "../post/post.entity";
+import { PostBookmark, PostLike } from "../post/post-interaction.entity";
 import { NotificationService } from "src/notifications/notification.service";
 import { NotificationSettingsService } from "src/notifications/notification-settings.service";
 import { NotificationGateway } from "src/notifications/notification.gateway";
@@ -228,16 +229,42 @@ export class UserService {
     user_id: number,
     paging: PaginationQueryDto,
   ): Promise<Page<Post>> {
-    const user = await this.findOne(user_id);
-    return this.pageByIds(this.postRepo, user!.likes, paging);
+    await this.findOne(user_id);
+    return this.pageByInteraction(PostLike, user_id, paging);
   }
 
   async bookmarks(
     user_id: number,
     paging: PaginationQueryDto,
   ): Promise<Page<Post>> {
-    const user = await this.findOne(user_id);
-    return this.pageByIds(this.postRepo, user!.bookmarks, paging, ["user"]);
+    await this.findOne(user_id);
+    return this.pageByInteraction(PostBookmark, user_id, paging, true);
+  }
+
+  /** One page of the posts a user liked or bookmarked, most recent first. */
+  private async pageByInteraction(
+    table: typeof PostLike | typeof PostBookmark,
+    user_id: number,
+    paging: PaginationQueryDto,
+    withAuthor = false,
+  ): Promise<Page<Post>> {
+    const query = this.postRepo
+      .createQueryBuilder("post")
+      .innerJoin(
+        table,
+        "interaction",
+        "interaction.post_id = post.id AND interaction.user_id = :user_id",
+        { user_id },
+      )
+      .orderBy("interaction.created_at", "DESC")
+      .addOrderBy("post.id", "DESC")
+      // limit/offset, not take/skip: the only join is the many-to-one author,
+      // so rows don't repeat, and take/skip can't order by a joined column.
+      .limit(paging.limit)
+      .offset((paging.page - 1) * paging.limit);
+    if (withAuthor) query.leftJoinAndSelect("post.user", "user");
+    const [data, total] = await query.getManyAndCount();
+    return { data, total };
   }
 
   /** One page of the rows whose ids are in a user's jsonb id array, newest id first. */

@@ -1,3 +1,4 @@
+import { PostBookmark, PostLike } from "./post-interaction.entity";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { Post as PostEntity } from "./post.entity";
@@ -7,7 +8,10 @@ import { User } from "src/user/user.entity";
 import { NotificationModule } from "src/notifications/notification.module";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([PostEntity, User]), NotificationModule],
+  imports: [
+    TypeOrmModule.forFeature([PostEntity, User, PostLike, PostBookmark]),
+    NotificationModule,
+  ],
   controllers: [PostController],
   providers: [PostService],
 })

@@ -5,6 +5,7 @@ import {
   Column,
   CreateDateColumn,
   ManyToOne,
+  OneToMany,
   JoinColumn,
 } from "typeorm";
 import { User } from "src/user/user.entity";
@@ -12,6 +13,7 @@ import { Post } from "src/post/post.entity";
 
 @Index(["post_id"])
 @Index(["user_id"])
+@Index(["parent_id"])
 @Entity()
 export class Comment {
   @PrimaryGeneratedColumn()
@@ -26,6 +28,10 @@ export class Comment {
   @Column({ type: "text" })
   content: string;
 
+  /** The comment this one replies to; null for top-level comments. Replies are one level deep. */
+  @Column({ type: "integer", nullable: true })
+  parent_id: number | null;
+
   @CreateDateColumn({ type: "timestamp" })
   created_at: Date;
 
@@ -39,4 +45,13 @@ export class Comment {
   @ManyToOne(() => Post, { onDelete: "CASCADE" })
   @JoinColumn({ name: "post_id" })
   post: Post;
+
+  @ManyToOne(() => Comment, (comment) => comment.replies, {
+    onDelete: "CASCADE",
+  })
+  @JoinColumn({ name: "parent_id" })
+  parent: Comment | null;
+
+  @OneToMany(() => Comment, (comment) => comment.parent)
+  replies: Comment[];
 }
