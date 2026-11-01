@@ -3,12 +3,15 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Notification, NotificationType } from "./notification.entity";
 import { Between, In, Repository } from "typeorm";
 import { InsertNotificationDto } from "./dto/notifications.dto";
+import { UserBlock } from "src/user/user-block.entity";
 
 @Injectable()
 export class NotificationService {
   constructor(
     @InjectRepository(Notification)
     private repo: Repository<Notification>,
+    @InjectRepository(UserBlock)
+    private blocks: Repository<UserBlock>,
   ) {}
 
   async getUserNotifications(userId: number, limit = 20, page = 1) {
@@ -63,7 +66,17 @@ export class NotificationService {
     return existing;
   }
 
-  async createNotification(payload: InsertNotificationDto) {
+  /** Saves a notification, or returns null if the recipient blocked the actor. */
+  async createNotification(
+    payload: InsertNotificationDto,
+  ): Promise<Notification | null> {
+    if (
+      await this.blocks.existsBy({
+        blocker_id: payload.recipient_id,
+        blocked_id: payload.actor_id,
+      })
+    )
+      return null;
     const data = {
       recipient_id: payload.recipient_id,
       actor_id: payload.actor_id,
@@ -76,8 +89,25 @@ export class NotificationService {
     return this.repo.save(notification);
   }
 
+  /** Saves notifications, skipping recipients who blocked the actor. */
   async createNotificationBulk(payload: InsertNotificationDto[]) {
     let notifications: Notification[];
+    if (payload.length) {
+      const blockers = new Set(
+        (
+          await this.blocks.find({
+            where: {
+              blocker_id: In(payload.map((p) => p.recipient_id)),
+              blocked_id: In(payload.map((p) => p.actor_id)),
+            },
+          })
+        ).map((b) => `${b.blocker_id}:${b.blocked_id}`),
+      );
+      payload = payload.filter(
+        (p) => !blockers.has(`${p.recipient_id}:${p.actor_id}`),
+      );
+      if (!payload.length) return [];
+    }
     try {
       if (payload.length === 0) throw new Error("Payload array is empty");
       const insertResult = await this.repo

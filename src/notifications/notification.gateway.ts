@@ -223,7 +223,9 @@ export class NotificationGateway
     socket.emit("token-verified", { valid: isValid });
   }
 
-  sendNotificationToUser(userId: number, notification: Notification) {
+  /** Pushes a notification; null (one that wasn't created, e.g. blocked) is skipped. */
+  sendNotificationToUser(userId: number, notification: Notification | null) {
+    if (!notification) return;
     console.log(`[WS] Sending to user:${userId}`, notification);
     this.server.to(`user:${userId}`).emit("notification", notification);
   }

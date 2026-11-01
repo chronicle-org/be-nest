@@ -20,7 +20,11 @@ import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { DeleteAccountDto } from "./dto/delete-account.dto";
-import { ForgotPasswordDto, ResetPasswordDto } from "./dto/password-reset.dto";
+import {
+  ForgotPasswordDto,
+  ResetPasswordDto,
+  VerifyEmailDto,
+} from "./dto/password-reset.dto";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "./jwt.strategy";
@@ -164,6 +168,41 @@ export class AuthController {
   ): Promise<{ message: string }> {
     await this.service.resetPassword(data.token, data.new_password);
     return { message: "Password reset" };
+  }
+
+  @ApiOperation({ summary: "Confirm an email from the sign-up link" })
+  @ApiResponse({ status: 200, description: "Email verified" })
+  @ApiResponse({
+    status: 400,
+    description: "The link is invalid or has expired",
+  })
+  @Throttle({ default: RATE_LIMIT.AUTH.RESET_PASSWORD })
+  @HttpCode(200)
+  @Post("/verify-email")
+  async verifyEmail(
+    @Body() data: VerifyEmailDto,
+  ): Promise<{ message: string }> {
+    await this.service.verifyEmail(data.token);
+    return { message: "Email verified" };
+  }
+
+  @ApiOperation({ summary: "Send the email verification link again" })
+  @ApiResponse({ status: 200, description: "Link sent" })
+  @ApiResponse({ status: 400, description: "Already verified" })
+  @ApiResponse({
+    status: 503,
+    description: "Email sending isn't configured on this server",
+  })
+  @ApiBearerAuth("access-token")
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: RATE_LIMIT.AUTH.FORGOT_PASSWORD })
+  @HttpCode(200)
+  @Post("/resend-verification")
+  async resendVerification(
+    @CurrentUser() user: JwtPayload,
+  ): Promise<{ message: string }> {
+    await this.service.resendVerification(user.user_id);
+    return { message: "Verification link sent" };
   }
 
   @ApiOperation({ summary: "Logout user by clearing authentication cookie" })

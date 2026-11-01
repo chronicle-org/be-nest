@@ -18,7 +18,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from "@nestjs/swagger";
-import { PagedResult, PostService } from "./post.service";
+import { PagedResult, PostService, WriterStats } from "./post.service";
 import { Post as PostEntity } from "./post.entity";
 import { CreatePostDto } from "./dto/post.dto";
 import { UpdatePostDto } from "./dto/post.dto";
@@ -26,6 +26,7 @@ import { FindPostsQueryDto } from "./dto/find-posts-query.dto";
 import { PaginationQueryDto } from "src/utils/pagination";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import { OptionalJwtAuthGuard } from "src/auth/optional-jwt-auth.guard";
+import { VerifiedEmailGuard } from "src/auth/verified-email.guard";
 import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "src/auth/jwt.strategy";
 import type { InteractionType } from "src/utils/types";
@@ -48,6 +49,30 @@ export class PostController {
       queryDto.search,
       queryDto,
     );
+  }
+
+  @ApiOperation({ summary: "Most used tags on published posts" })
+  @ApiResponse({
+    status: 200,
+    description: "Up to `limit` (default 20) tags with their post counts",
+  })
+  @Get("/tags/popular")
+  popularTags(
+    @Query("limit", new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ): Promise<{ tag: string; count: number }[]> {
+    return this.service.popularTags(Math.min(Math.max(limit, 1), 200));
+  }
+
+  @ApiOperation({
+    summary: "The current writer's stats",
+    description:
+      "Totals across their published posts, and per post views, likes, comments, bookmarks, shares and likes in the last 30 days.",
+  })
+  @ApiBearerAuth("access-token")
+  @Get("/stats/mine")
+  @UseGuards(JwtAuthGuard)
+  stats(@CurrentUser() user: JwtPayload): Promise<WriterStats> {
+    return this.service.stats(user.user_id);
   }
 
   @ApiOperation({
@@ -131,7 +156,7 @@ export class PostController {
   @ApiResponse({ status: 201, description: "Post created successfully" })
   @ApiBearerAuth("access-token")
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedEmailGuard)
   create(
     @Body() post: CreatePostDto,
     @CurrentUser() user: JwtPayload,

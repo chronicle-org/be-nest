@@ -17,7 +17,11 @@ import {
 } from "@nestjs/swagger";
 import { UserService } from "./user.service";
 import { User } from "./user.entity";
-import { SuggestionsQueryDto, UpdateUserDto } from "./dto/user.dto";
+import {
+  FindUsersQueryDto,
+  SuggestionsQueryDto,
+  UpdateUserDto,
+} from "./dto/user.dto";
 import { Post as PostEntity } from "../post/post.entity";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import { OptionalJwtAuthGuard } from "src/auth/optional-jwt-auth.guard";
@@ -30,11 +34,27 @@ import { Page, PaginationQueryDto } from "src/utils/pagination";
 export class UserController {
   constructor(private readonly service: UserService) {}
 
-  @ApiOperation({ summary: "Get all users" })
+  @ApiOperation({
+    summary: "Get all users, or search them",
+    description:
+      "With `search`, returns people whose name or @handle contains it, most followed first.",
+  })
   @ApiResponse({ status: 200, description: "Paginated list of users" })
   @Get()
-  findAll(@Query() paging: PaginationQueryDto): Promise<Page<User>> {
-    return this.service.findAll(paging);
+  findAll(@Query() query: FindUsersQueryDto): Promise<Page<User>> {
+    return this.service.findAll(query, query.search);
+  }
+
+  @ApiOperation({ summary: "People the current user has blocked" })
+  @ApiResponse({ status: 200, description: "Paginated list of users" })
+  @ApiBearerAuth("access-token")
+  @UseGuards(JwtAuthGuard)
+  @Get("/blocks")
+  blocked(
+    @Query() paging: PaginationQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<Page<User>> {
+    return this.service.blocked(user.user_id, paging);
   }
 
   @ApiOperation({
@@ -104,6 +124,36 @@ export class UserController {
     @CurrentUser() user: JwtPayload,
   ): Promise<User> {
     return this.service.unfollow(user.user_id, user_id);
+  }
+
+  @ApiOperation({
+    summary: "Block a user",
+    description:
+      "Also ends any follow between you. They can't follow you, comment on your posts or reply to you, and you stop getting notifications from them and seeing their comments.",
+  })
+  @ApiResponse({ status: 201, description: "User blocked" })
+  @ApiBearerAuth("access-token")
+  @UseGuards(JwtAuthGuard)
+  @Post("/block/:user_id")
+  async block(
+    @Param("user_id", ParseIntPipe) user_id: number,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<{ message: string }> {
+    await this.service.block(user.user_id, user_id);
+    return { message: "User blocked" };
+  }
+
+  @ApiOperation({ summary: "Unblock a user" })
+  @ApiResponse({ status: 201, description: "User unblocked" })
+  @ApiBearerAuth("access-token")
+  @UseGuards(JwtAuthGuard)
+  @Post("/unblock/:user_id")
+  async unblock(
+    @Param("user_id", ParseIntPipe) user_id: number,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<{ message: string }> {
+    await this.service.unblock(user.user_id, user_id);
+    return { message: "User unblocked" };
   }
 
   @ApiOperation({ summary: "Get users that a user is following" })

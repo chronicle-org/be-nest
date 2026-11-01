@@ -26,3 +26,10 @@ export class ResetPasswordDto {
   @MaxLength(255, { message: "New password must not exceed 255 characters" })
   new_password: string;
 }
+
+export class VerifyEmailDto {
+  @ApiProperty({ description: "The token from the verification link" })
+  @IsString()
+  @MinLength(1, { message: "Verification token is required" })
+  token: string;
+}

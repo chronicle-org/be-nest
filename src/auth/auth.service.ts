@@ -36,6 +36,11 @@ type ResetTokenPayload = { user_id: number; tv: number; purpose: string };
  */
 const resetSecret = () => `${getJwtSecret()}:${RESET_PURPOSE}`;
 
+const VERIFY_TOKEN_TTL = "3d";
+const VERIFY_PURPOSE = "verify-email";
+type VerifyTokenPayload = { user_id: number; email: string; purpose: string };
+const verifySecret = () => `${getJwtSecret()}:${VERIFY_PURPOSE}`;
+
 /** Where reset links point: WEB_URL, or the first CORS origin. */
 const webUrl = (): string =>
   (process.env.WEB_URL || process.env.CORS_ORIGIN?.split(",")[0] || "")
@@ -127,6 +132,11 @@ export class AuthService {
           );
         }
       })();
+
+      if (this.mailService.isConfigured() && webUrl())
+        this.sendVerificationEmail(savedUser).catch((error) =>
+          this.logger.error("Failed to send verification email", error),
+        );
 
       return rest;
     } catch (error) {
@@ -348,6 +358,66 @@ export class AuthService {
         tv: payload.tv,
       })
       .execute();
+    if (!result.affected) throw invalid;
+  }
+
+  private async sendVerificationEmail(
+    user: Pick<User, "id" | "name" | "email">,
+  ): Promise<void> {
+    const payload: VerifyTokenPayload = {
+      user_id: user.id,
+      email: user.email,
+      purpose: VERIFY_PURPOSE,
+    };
+    const token = this.jwtService.sign(payload, {
+      secret: verifySecret(),
+      expiresIn: VERIFY_TOKEN_TTL,
+    });
+    const link = `${webUrl()}/verify-email?token=${encodeURIComponent(token)}`;
+    await this.mailService.send({
+      to: user.email,
+      subject: "Confirm your email for Chronicle",
+      text: `Hi ${user.name},\n\nWelcome to Chronicle! Open this link within 3 days to confirm your email:\n\n${link}\n\nIf you didn't sign up, you can ignore this email.`,
+      html: `<p>Hi ${escapeHtml(user.name)},</p><p>Welcome to Chronicle! Open this link within 3 days to confirm your email:</p><p><a href="${escapeHtml(link)}">Confirm my email</a></p><p>If you didn't sign up, you can ignore this email.</p>`,
+    });
+  }
+
+  /** Sends a new verification link to a signed-in user who hasn't verified yet. */
+  async resendVerification(user_id: number): Promise<void> {
+    if (!this.mailService.isConfigured() || !webUrl())
+      throw new ServiceUnavailableException(
+        "Email verification isn't available yet",
+      );
+    const user = await this.repo
+      .createQueryBuilder("user")
+      .addSelect("user.email")
+      .where({ id: user_id })
+      .getOne();
+    if (!user) throw new UnauthorizedException();
+    if (user.email_verified)
+      throw new BadRequestException("Your email is already verified");
+    await this.sendVerificationEmail(user);
+  }
+
+  /** Marks the email in a verification link as verified. */
+  async verifyEmail(token: string): Promise<void> {
+    const invalid = new BadRequestException(
+      "This verification link is invalid or has expired",
+    );
+    let payload: VerifyTokenPayload;
+    try {
+      payload = this.jwtService.verify<VerifyTokenPayload>(token, {
+        secret: verifySecret(),
+      });
+    } catch {
+      throw invalid;
+    }
+    if (payload.purpose !== VERIFY_PURPOSE) throw invalid;
+    // The email must still match, in case the account changed hands.
+    const result = await this.repo.update(
+      { id: payload.user_id, email: payload.email },
+      { email_verified: true },
+    );
     if (!result.affected) throw invalid;
   }
 

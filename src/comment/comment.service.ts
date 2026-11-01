@@ -8,7 +8,8 @@ import {
 } from "@nestjs/common";
 import { Comment } from "./comment.entity";
 import { InjectRepository } from "@nestjs/typeorm";
-import { In, IsNull, Repository } from "typeorm";
+import { In, IsNull, Not, Repository } from "typeorm";
+import { UserBlock } from "src/user/user-block.entity";
 import { Post as PostEntity } from "src/post/post.entity";
 import { NotificationService } from "src/notifications/notification.service";
 import { NotificationSettingsService } from "src/notifications/notification-settings.service";
@@ -23,6 +24,8 @@ export class CommentService {
     private repo: Repository<Comment>,
     @InjectRepository(PostEntity)
     private postRepo: Repository<PostEntity>,
+    @InjectRepository(UserBlock)
+    private blockRepo: Repository<UserBlock>,
     private notificationService: NotificationService,
     private notificationSettingsService: NotificationSettingsService,
     private notificationGateway: NotificationGateway,
@@ -131,6 +134,20 @@ export class CommentService {
       ? await this.findReplyParent(data.parent_id, data.post_id as number)
       : null;
 
+    // People who blocked you don't get your comments or replies.
+    const post = await this.postRepo.findOneBy({ id: data.post_id });
+    const blockers = [post?.user_id, repliedTo?.user_id].filter(
+      (id): id is number => id !== undefined && id !== data.user_id,
+    );
+    if (
+      blockers.length &&
+      (await this.blockRepo.existsBy({
+        blocker_id: In(blockers),
+        blocked_id: data.user_id,
+      }))
+    )
+      throw new ForbiddenException("You can't comment here");
+
     const commentData: Partial<Comment> = {
       user_id: data.user_id,
       post_id: data.post_id,
@@ -208,17 +225,28 @@ export class CommentService {
   async findByPostId(
     post_id: number,
     paging: PaginationQueryDto,
+    viewer_id?: number,
   ): Promise<Page<Comment & { reply_count: number }>> {
     try {
+      // Comments by people the viewer blocked are left out.
+      const blocked = viewer_id
+        ? (await this.blockRepo.findBy({ blocker_id: viewer_id })).map(
+            (b) => b.blocked_id,
+          )
+        : [];
+      const notBlocked = blocked.length ? { user_id: Not(In(blocked)) } : {};
       const [comments, total] = await this.repo.findAndCount({
-        where: { post_id, parent_id: IsNull() },
+        where: { post_id, parent_id: IsNull(), ...notBlocked },
         relations: ["user"],
         order: { id: "DESC" },
         ...toTakeSkip(paging),
       });
       const replies = comments.length
         ? await this.repo.find({
-            where: { parent_id: In(comments.map((c) => c.id)) },
+            where: {
+              parent_id: In(comments.map((c) => c.id)),
+              ...notBlocked,
+            },
             relations: ["user"],
             order: { id: "ASC" },
           })

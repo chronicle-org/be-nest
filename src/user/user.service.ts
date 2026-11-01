@@ -2,16 +2,19 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import {
   FindOptionsOrder,
   FindOptionsWhere,
+  ILike,
   In,
   Not,
   Repository,
 } from "typeorm";
 import { User } from "./user.entity";
+import { UserBlock } from "./user-block.entity";
 import { addToJsonbArray, removeFromJsonbArray } from "src/utils/jsonb-array";
 import { Post } from "../post/post.entity";
 import { PostBookmark, PostLike } from "../post/post-interaction.entity";
@@ -39,6 +42,8 @@ export class UserService {
     private repo: Repository<User>,
     @InjectRepository(Post)
     private postRepo: Repository<Post>,
+    @InjectRepository(UserBlock)
+    private blockRepo: Repository<UserBlock>,
     private notificationService: NotificationService,
     private notificationSettingsService: NotificationSettingsService,
     private notificationGateway: NotificationGateway,
@@ -54,9 +59,23 @@ export class UserService {
     return this.findOne(id) as Promise<User>;
   }
 
-  async findAll(paging: PaginationQueryDto): Promise<Page<User>> {
+  /** All users by id, or with `search`, people matching their name or @handle, most followed first. */
+  async findAll(
+    paging: PaginationQueryDto,
+    search?: string,
+  ): Promise<Page<User>> {
+    const term = search?.trim().replace(/^@/, "");
+    if (!term) {
+      const [data, total] = await this.repo.findAndCount({
+        order: { id: "ASC" },
+        ...toTakeSkip(paging),
+      });
+      return { data, total };
+    }
+    const pattern = `%${term.replace(/[%_\\]/g, "\\$&")}%`;
     const [data, total] = await this.repo.findAndCount({
-      order: { id: "ASC" },
+      where: [{ name: ILike(pattern) }, { handle: ILike(pattern) }],
+      order: { followers_count: "DESC", id: "ASC" },
       ...toTakeSkip(paging),
     });
     return { data, total };
@@ -136,6 +155,8 @@ export class UserService {
 
     // Both must exist; findOne throws 404 otherwise.
     await Promise.all([this.findOne(follower_id), this.findOne(followee_id)]);
+    if (await this.isBlockedEitherWay(follower_id, followee_id))
+      throw new ForbiddenException("You can't follow this user");
     await this.repo.manager.transaction(async (manager) => {
       const added = await addToJsonbArray(
         manager,
@@ -207,6 +228,55 @@ export class UserService {
       await removeFromJsonbArray(manager, FOLLOWERS, followee_id, follower_id);
     });
     return this.findOne(follower_id) as Promise<User>;
+  }
+
+  /** True when either user has blocked the other. */
+  isBlockedEitherWay(a: number, b: number): Promise<boolean> {
+    return this.blockRepo.existsBy([
+      { blocker_id: a, blocked_id: b },
+      { blocker_id: b, blocked_id: a },
+    ]);
+  }
+
+  /** Blocks a user and ends any follow between the two. */
+  async block(blocker_id: number, blocked_id: number): Promise<void> {
+    if (blocker_id === blocked_id)
+      throw new BadRequestException("You can't block yourself");
+    await this.findOne(blocked_id);
+    await this.repo.manager.transaction(async (manager) => {
+      await manager
+        .createQueryBuilder()
+        .insert()
+        .into(UserBlock)
+        .values({ blocker_id, blocked_id })
+        .orIgnore()
+        .execute();
+      for (const [a, b] of [
+        [blocker_id, blocked_id],
+        [blocked_id, blocker_id],
+      ]) {
+        if (await removeFromJsonbArray(manager, FOLLOWING, a, b))
+          await removeFromJsonbArray(manager, FOLLOWERS, b, a);
+      }
+    });
+  }
+
+  async unblock(blocker_id: number, blocked_id: number): Promise<void> {
+    await this.blockRepo.delete({ blocker_id, blocked_id });
+  }
+
+  /** The people a user has blocked, most recent first. */
+  async blocked(
+    blocker_id: number,
+    paging: PaginationQueryDto,
+  ): Promise<Page<User>> {
+    const [rows, total] = await this.blockRepo.findAndCount({
+      where: { blocker_id },
+      relations: ["blocked"],
+      order: { created_at: "DESC" },
+      ...toTakeSkip(paging),
+    });
+    return { data: rows.map((row) => row.blocked), total };
   }
 
   async following(
