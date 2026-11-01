@@ -1,4 +1,11 @@
-import { IsString, IsNotEmpty, MinLength, MaxLength } from "class-validator";
+import {
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 
 export class CreateCommentDto {
@@ -20,6 +27,16 @@ export class CreateCommentDto {
   })
   @IsNotEmpty({ message: "Post ID is required" })
   post_id: number;
+
+  @ApiProperty({
+    description:
+      "ID of the comment being replied to. Replying to a reply attaches to its top-level comment.",
+    example: 12,
+    required: false,
+  })
+  @IsOptional()
+  @IsInt()
+  parent_id?: number;
 }
 
 export class UpdateCommentDto {

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  DefaultValuePipe,
   Delete,
   ForbiddenException,
   Get,
@@ -22,6 +23,7 @@ import { Post as PostEntity } from "./post.entity";
 import { CreatePostDto } from "./dto/post.dto";
 import { UpdatePostDto } from "./dto/post.dto";
 import { FindPostsQueryDto } from "./dto/find-posts-query.dto";
+import { PaginationQueryDto } from "src/utils/pagination";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 import { OptionalJwtAuthGuard } from "src/auth/optional-jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
@@ -40,7 +42,30 @@ export class PostController {
   @ApiResponse({ status: 200, description: "Paginated list of posts" })
   @Get()
   findAll(@Query() queryDto: FindPostsQueryDto): Promise<PagedResult> {
-    return this.service.findAll(queryDto.page, queryDto.limit, queryDto.search);
+    return this.service.findAll(
+      queryDto.page,
+      queryDto.limit,
+      queryDto.search,
+      queryDto,
+    );
+  }
+
+  @ApiOperation({
+    summary: "Get posts from the writers the current user follows",
+  })
+  @ApiResponse({ status: 200, description: "Paginated list of posts" })
+  @ApiBearerAuth("access-token")
+  @Get("/feed/following")
+  @UseGuards(JwtAuthGuard)
+  findFollowing(
+    @Query() queryDto: PaginationQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<PagedResult> {
+    return this.service.findFollowing(
+      user.user_id,
+      queryDto.page,
+      queryDto.limit,
+    );
   }
 
   @ApiOperation({ summary: "Get all posts by a specific user" })
@@ -55,7 +80,23 @@ export class PostController {
       queryDto.page,
       queryDto.limit,
       queryDto.search,
+      queryDto,
     );
+  }
+
+  @ApiOperation({
+    summary: "Get posts to read next",
+    description:
+      "Posts that share a tag with this one, most liked first, topped up with the author's latest posts.",
+  })
+  @ApiResponse({ status: 200, description: "Up to `limit` posts (default 3)" })
+  @ApiResponse({ status: 404, description: "Post not found" })
+  @Get("/:id/related")
+  findRelated(
+    @Param("id", ParseIntPipe) id: number,
+    @Query("limit", new DefaultValuePipe(3), ParseIntPipe) limit: number,
+  ): Promise<PostEntity[]> {
+    return this.service.findRelated(id, Math.min(Math.max(limit, 1), 10));
   }
 
   @ApiOperation({ summary: "Get a single post by ID" })

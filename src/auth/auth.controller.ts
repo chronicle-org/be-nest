@@ -7,6 +7,7 @@ import {
   Put,
   Delete,
   UseGuards,
+  HttpCode,
 } from "@nestjs/common";
 import {
   ApiTags,
@@ -19,6 +20,7 @@ import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { DeleteAccountDto } from "./dto/delete-account.dto";
+import { ForgotPasswordDto, ResetPasswordDto } from "./dto/password-reset.dto";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "./jwt.strategy";
@@ -123,6 +125,45 @@ export class AuthController {
     await this.service.deleteAccount(user.user_id, data.password);
     res.clearCookie(cookieName);
     return { message: "Account deleted" };
+  }
+
+  @ApiOperation({
+    summary: "Email a password reset link",
+    description:
+      "Always answers the same way whether or not the email has an account. The link is valid for 30 minutes.",
+  })
+  @ApiResponse({ status: 200, description: "Request accepted" })
+  @ApiResponse({
+    status: 503,
+    description: "Email sending isn't configured on this server",
+  })
+  @Throttle({ default: RATE_LIMIT.AUTH.FORGOT_PASSWORD })
+  @HttpCode(200)
+  @Post("/forgot-password")
+  forgotPassword(@Body() data: ForgotPasswordDto): { message: string } {
+    this.service.requestPasswordReset(data.email);
+    return {
+      message: "If that email has an account, a reset link is on its way",
+    };
+  }
+
+  @ApiOperation({
+    summary: "Set a new password from a reset link",
+    description: "Logs out every device; sign in with the new password.",
+  })
+  @ApiResponse({ status: 200, description: "Password reset" })
+  @ApiResponse({
+    status: 400,
+    description: "The link is invalid, expired or already used",
+  })
+  @Throttle({ default: RATE_LIMIT.AUTH.RESET_PASSWORD })
+  @HttpCode(200)
+  @Post("/reset-password")
+  async resetPassword(
+    @Body() data: ResetPasswordDto,
+  ): Promise<{ message: string }> {
+    await this.service.resetPassword(data.token, data.new_password);
+    return { message: "Password reset" };
   }
 
   @ApiOperation({ summary: "Logout user by clearing authentication cookie" })

@@ -7,7 +7,15 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { FindOperator, ILike, Repository } from "typeorm";
+import {
+  FindOperator,
+  FindOptionsOrder,
+  ILike,
+  In,
+  Not,
+  Raw,
+  Repository,
+} from "typeorm";
 import { Post } from "./post.entity";
 import { InteractionType } from "src/utils/types";
 import { User } from "src/user/user.entity";
@@ -18,15 +26,53 @@ import { NotificationGateway } from "src/notifications/notification.gateway";
 import { NotificationService } from "src/notifications/notification.service";
 import { NotificationSettingsService } from "src/notifications/notification-settings.service";
 import { NotificationType } from "src/notifications/notification.entity";
+import type { PostSort } from "./dto/find-posts-query.dto";
+import { PostBookmark, PostLike } from "./post-interaction.entity";
 
 export interface PagedResult {
   data: Post[];
   total: number;
 }
 
+export type PostListOptions = {
+  tag?: string;
+  sort?: PostSort;
+};
+
+const SORT_ORDER: Record<PostSort, FindOptionsOrder<Post>> = {
+  latest: { id: "DESC" },
+  likes: { likes_count: "DESC", id: "DESC" },
+  views: { view_count: "DESC", id: "DESC" },
+};
+
+/**
+ * Matches posts whose comma-separated tags include `tag` exactly, so
+ * "java" doesn't also match "javascript". `key` keeps parameter names apart
+ * when one query checks several tags.
+ */
+const hasTag = (tag: string, key = 0) => {
+  const param = `tagPattern${key}`;
+  const escaped = tag
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[%_\\]/g, "\\$&");
+  return Raw(
+    (column) =>
+      `(',' || REPLACE(LOWER(${column}), ' ', '') || ',') LIKE :${param}`,
+    { [param]: `%,${escaped},%` },
+  );
+};
+
+const parseTags = (tags?: string | null): string[] =>
+  (tags || "")
+    .split(",")
+    .map((tag) => tag.trim().toLowerCase())
+    .filter(Boolean);
+
 type InteractionConfig = {
   postColumn: "likes" | "bookmarks";
   userColumn: "likes" | "bookmarks";
+  table: typeof PostLike | typeof PostBookmark;
   add: boolean;
   notify?: {
     type: NotificationType;
@@ -39,6 +85,7 @@ const INTERACTIONS: Record<InteractionType, InteractionConfig> = {
   like: {
     postColumn: "likes",
     userColumn: "likes",
+    table: PostLike,
     add: true,
     notify: { type: NotificationType.LIKE, settingKey: "notify_likes" },
     conflictMessage: "User already liked this post",
@@ -46,12 +93,14 @@ const INTERACTIONS: Record<InteractionType, InteractionConfig> = {
   unlike: {
     postColumn: "likes",
     userColumn: "likes",
+    table: PostLike,
     add: false,
     conflictMessage: "User has not liked this post",
   },
   bookmark: {
     postColumn: "bookmarks",
     userColumn: "bookmarks",
+    table: PostBookmark,
     add: true,
     notify: {
       type: NotificationType.BOOKMARK,
@@ -62,6 +111,7 @@ const INTERACTIONS: Record<InteractionType, InteractionConfig> = {
   unbookmark: {
     postColumn: "bookmarks",
     userColumn: "bookmarks",
+    table: PostBookmark,
     add: false,
     conflictMessage: "User has not bookmarked this post",
   },
@@ -218,16 +268,18 @@ export class PostService {
     page: number = 1,
     limit: number = 10,
     search: string = "",
+    { tag, sort = "latest" }: PostListOptions = {},
   ): Promise<PagedResult> {
     const skip = (page - 1) * limit;
     const searchConditions = this.buildSearchConditions(search, {
       is_draft: false,
+      ...(tag ? { tags: hasTag(tag) } : {}),
     });
 
     const [data, total] = await this.repo.findAndCount({
       where: searchConditions,
       relations: ["user"],
-      order: { id: "DESC" },
+      order: SORT_ORDER[sort],
       take: limit,
       skip: skip,
     });
@@ -240,22 +292,84 @@ export class PostService {
     page: number = 1,
     limit: number = 10,
     search: string = "",
+    { tag, sort = "latest" }: PostListOptions = {},
   ): Promise<PagedResult> {
     const skip = (page - 1) * limit;
     const searchConditions = this.buildSearchConditions(search, {
       user_id,
       is_draft: false,
+      ...(tag ? { tags: hasTag(tag) } : {}),
     });
 
     const [data, total] = await this.repo.findAndCount({
       where: searchConditions,
       relations: ["user"],
-      order: { id: "DESC" },
+      order: SORT_ORDER[sort],
       take: limit,
       skip: skip,
     });
 
     return { data, total };
+  }
+
+  /** Published posts from the writers `user_id` follows, newest first. */
+  async findFollowing(
+    user_id: number,
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<PagedResult> {
+    const user = await this.userRepo.findOneBy({ id: user_id });
+    const following = user?.following ?? [];
+    if (following.length === 0) return { data: [], total: 0 };
+
+    const [data, total] = await this.repo.findAndCount({
+      where: { user_id: In(following), is_draft: false },
+      relations: ["user"],
+      order: { id: "DESC" },
+      take: limit,
+      skip: (page - 1) * limit,
+    });
+
+    return { data, total };
+  }
+
+  /**
+   * Posts to read next: ones sharing a tag with this post (most liked first),
+   * topped up with the author's latest posts when there aren't enough.
+   */
+  async findRelated(id: number, limit: number = 3): Promise<Post[]> {
+    const post = await this.repo.findOneBy({ id, is_draft: false });
+    if (!post) throw new NotFoundException("Post not found");
+
+    const tags = parseTags(post.tags);
+    const related = tags.length
+      ? await this.repo.find({
+          where: tags.map((tag, i) => ({
+            id: Not(id),
+            is_draft: false,
+            tags: hasTag(tag, i),
+          })),
+          relations: ["user"],
+          order: SORT_ORDER.likes,
+          take: limit,
+        })
+      : [];
+
+    if (related.length < limit) {
+      const fromAuthor = await this.repo.find({
+        where: {
+          id: Not(In([id, ...related.map((p) => p.id)])),
+          user_id: post.user_id,
+          is_draft: false,
+        },
+        relations: ["user"],
+        order: { id: "DESC" },
+        take: limit - related.length,
+      });
+      related.push(...fromAuthor);
+    }
+
+    return related;
   }
 
   async getDrafts(
@@ -365,6 +479,17 @@ export class PostService {
           user_id,
           post_id,
         );
+        if (config.add) {
+          await manager
+            .createQueryBuilder()
+            .insert()
+            .into(config.table)
+            .values({ user_id, post_id })
+            .orIgnore()
+            .execute();
+        } else {
+          await manager.delete(config.table, { user_id, post_id });
+        }
       });
 
       const notify = config.notify;

@@ -464,6 +464,257 @@ describe("Chronicle API (e2e)", () => {
       api().delete("/auth/account").send({ password }).expect(401));
   });
 
+  describe("following feed", () => {
+    it("shows only published posts from people you follow", async () => {
+      const cat = await registerAndLogin("Cat");
+      const dan = await registerAndLogin("Dan");
+      const ida = await registerAndLogin("Ida");
+      await api()
+        .post(`/user/follow/${dan.id}`)
+        .set("Cookie", cat.cookie)
+        .expect(201);
+      const danPost = await createPost(dan);
+      await createPost(dan, { is_draft: true });
+      await createPost(ida);
+
+      const res = await api()
+        .get("/post/feed/following")
+        .set("Cookie", cat.cookie)
+        .expect(200);
+      expect(pageOf(res).data.map((p) => p.id)).toEqual([danPost]);
+      expect(pageOf(res).total).toBe(1);
+
+      const empty = await api()
+        .get("/post/feed/following")
+        .set("Cookie", ida.cookie)
+        .expect(200);
+      expect(pageOf(empty)).toEqual({ data: [], total: 0 });
+    });
+
+    it("requires a login", () => api().get("/post/feed/following").expect(401));
+  });
+
+  describe("tags and sorting", () => {
+    it("filters by an exact tag and sorts by likes", async () => {
+      const tag = `t${runId}`;
+      const plain = await createPost(ann, { tags: `${tag},news` });
+      const liked = await createPost(ann, { tags: `other,${tag}` });
+      await createPost(ann, { tags: `${tag}x` });
+      await api()
+        .put(`/post/interaction/like/${liked}`)
+        .set("Cookie", bob.cookie)
+        .expect(200);
+
+      const latest = await api().get(`/post?tag=${tag}`).expect(200);
+      expect(pageOf(latest).data.map((p) => p.id)).toEqual([liked, plain]);
+
+      const byLikes = await api()
+        .get(`/post?tag=${tag.toUpperCase()}&sort=likes`)
+        .expect(200);
+      expect(pageOf(byLikes).data.map((p) => p.id)).toEqual([liked, plain]);
+
+      await api().get("/post?sort=random").expect(400);
+    });
+
+    it("suggests related posts, then the author's latest", async () => {
+      const tag = `r${runId}`;
+      const post = await createPost(bob, { tags: tag });
+      const sameTag = await createPost(ann, { tags: `${tag},misc` });
+      const byBob = await createPost(bob, { tags: "unrelated" });
+
+      const res = await api().get(`/post/${post}/related?limit=2`).expect(200);
+      const ids = (res.body as { content: { id: number }[] }).content.map(
+        (p) => p.id,
+      );
+      expect(ids).toEqual([sameTag, byBob]);
+    });
+  });
+
+  describe("comment replies", () => {
+    it("nests replies one level deep and notifies the person replied to", async () => {
+      const jo = await registerAndLogin("Jo");
+      const postId = await createPost(ann);
+      const top = bodyOf(
+        await api()
+          .post("/comment")
+          .set("Cookie", bob.cookie)
+          .send({ post_id: postId, content: "top" })
+          .expect(201),
+      ).content.id;
+      const reply = bodyOf(
+        await api()
+          .post("/comment")
+          .set("Cookie", jo.cookie)
+          .send({ post_id: postId, content: "reply", parent_id: top })
+          .expect(201),
+      ).content;
+      expect(reply.parent_id).toBe(top);
+      // Replying to a reply stays under the top-level comment.
+      const nested = bodyOf(
+        await api()
+          .post("/comment")
+          .set("Cookie", bob.cookie)
+          .send({ post_id: postId, content: "again", parent_id: reply.id })
+          .expect(201),
+      ).content;
+      expect(nested.parent_id).toBe(top);
+
+      const page = pageOf(
+        await api().get(`/comment/post/${postId}`).expect(200),
+      ) as unknown as {
+        data: {
+          id: number;
+          reply_count: number;
+          replies: { content: string }[];
+        }[];
+        total: number;
+      };
+      expect(page.total).toBe(1);
+      expect(page.data[0].id).toBe(top);
+      expect(page.data[0].reply_count).toBe(2);
+      expect(page.data[0].replies.map((r) => r.content)).toEqual([
+        "reply",
+        "again",
+      ]);
+
+      // Notifications are sent in the background.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const notifications = pageOf(
+        await api().get("/notifications").set("Cookie", jo.cookie).expect(200),
+      ) as unknown as { data: { type: number }[] };
+      expect(notifications.data.map((n) => n.type)).toContain(5);
+
+      await api()
+        .delete(`/comment/${top}`)
+        .set("Cookie", bob.cookie)
+        .expect(200);
+      const post = bodyOf(await api().get(`/post/${postId}`)).content;
+      expect(post.comment_count).toBe(0);
+    });
+
+    it("refuses a reply to a comment on another post", async () => {
+      const first = await createPost(ann);
+      const second = await createPost(ann);
+      const comment = bodyOf(
+        await api()
+          .post("/comment")
+          .set("Cookie", bob.cookie)
+          .send({ post_id: first, content: "hi" })
+          .expect(201),
+      ).content.id;
+      await api()
+        .post("/comment")
+        .set("Cookie", bob.cookie)
+        .send({ post_id: second, content: "hi", parent_id: comment })
+        .expect(400);
+    });
+  });
+
+  describe("liked and bookmarked lists", () => {
+    it("lists posts most recently liked first", async () => {
+      const kit = await registerAndLogin("Kit");
+      const older = await createPost(ann);
+      const newer = await createPost(ann);
+      for (const id of [newer, older])
+        await api()
+          .put(`/post/interaction/like/${id}`)
+          .set("Cookie", kit.cookie)
+          .expect(200);
+      await api()
+        .put(`/post/interaction/bookmark/${older}`)
+        .set("Cookie", kit.cookie)
+        .expect(200);
+
+      const likes = pageOf(await api().get(`/user/likes/${kit.id}`));
+      expect(likes.data.map((p) => p.id)).toEqual([older, newer]);
+      expect(likes.total).toBe(2);
+
+      await api()
+        .put(`/post/interaction/unlike/${older}`)
+        .set("Cookie", kit.cookie)
+        .expect(200);
+      const after = pageOf(await api().get(`/user/likes/${kit.id}`));
+      expect(after.data.map((p) => p.id)).toEqual([newer]);
+
+      const bookmarks = pageOf(await api().get(`/user/bookmarks/${kit.id}`));
+      expect(bookmarks.data.map((p) => p.id)).toEqual([older]);
+    });
+  });
+
+  describe("password reset", () => {
+    const env = { ...process.env };
+    afterEach(() => {
+      process.env = { ...env };
+      jest.restoreAllMocks();
+    });
+
+    it("says so when email isn't set up", () =>
+      api()
+        .post("/auth/forgot-password")
+        .set("X-Forwarded-For", "10.0.1.1")
+        .send({ email: ann.email })
+        .expect(503));
+
+    it("emails a single-use link that sets a new password", async () => {
+      const max = await registerAndLogin("Max");
+      process.env.RESEND_API_KEY = "test-key";
+      process.env.MAIL_FROM = "Chronicle <hello@example.com>";
+      process.env.WEB_URL = "https://chronicle.test";
+      // Stands in for Resend; nothing else in the app calls fetch.
+      const sent: { to: string; text: string }[] = [];
+      jest.spyOn(global, "fetch").mockImplementation((_url, init) => {
+        sent.push(JSON.parse(init!.body as string) as (typeof sent)[number]);
+        return Promise.resolve(new Response("{}", { status: 200 }));
+      });
+
+      for (const email of [max.email, `nobody-${runId}@example.com`])
+        await api()
+          .post("/auth/forgot-password")
+          .set("X-Forwarded-For", "10.0.1.2")
+          .send({ email })
+          .expect(200);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(sent).toHaveLength(1);
+      expect(sent[0].to).toBe(max.email);
+      const token = decodeURIComponent(
+        /reset-password\?token=([^\s]+)/.exec(sent[0].text)![1],
+      );
+
+      // A reset token isn't a login token.
+      await api()
+        .get(`/post/user/${max.id}/drafts`)
+        .set("Cookie", `chronicle_access_token=${token}`)
+        .expect(401);
+
+      await api()
+        .post("/auth/reset-password")
+        .send({ token, new_password: "brand-new-pass" })
+        .expect(200);
+      await api()
+        .post("/auth/reset-password")
+        .send({ token, new_password: "another-pass" })
+        .expect(400);
+
+      await api()
+        .post("/auth/login")
+        .set("X-Forwarded-For", "10.0.1.3")
+        .send({ email: max.email, password: "brand-new-pass" })
+        .expect(201);
+      // The old session was logged out.
+      await api()
+        .get(`/post/user/${max.id}/drafts`)
+        .set("Cookie", max.cookie)
+        .expect(401);
+    });
+
+    it("rejects a bad token", () =>
+      api()
+        .post("/auth/reset-password")
+        .send({ token: "not-a-token", new_password: "whatever1" })
+        .expect(400));
+  });
+
   describe("uploads", () => {
     it("rejects a file whose content isn't the image type it claims", async () => {
       const res = await api()

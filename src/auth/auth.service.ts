@@ -3,6 +3,8 @@ import {
   ConflictException,
   Injectable,
   InternalServerErrorException,
+  Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
@@ -11,7 +13,8 @@ import { User } from "../user/user.entity";
 import * as bcrypt from "bcrypt";
 import { randomInt } from "crypto";
 import { JwtService } from "@nestjs/jwt";
-import { JwtPayload } from "./jwt.strategy";
+import { getJwtSecret, JwtPayload } from "./jwt.strategy";
+import { MailService } from "src/mail/mail.service";
 import { generateHandle } from "src/utils";
 import { PG_ERROR } from "src/utils/constant";
 import { NotificationSettings } from "../notifications/notification-settings.entity";
@@ -21,6 +24,32 @@ import { removeFromAllJsonbArrays } from "src/utils/jsonb-array";
 // bcrypt hash of a random string, compared against when the email is unknown.
 const DUMMY_HASH =
   "$2b$10$K3ng5iSBR9S2ruSaaiLRZuwzuKXVUyh75oi9zUpX7zdsDT2DUyvw2";
+
+const RESET_TOKEN_TTL = "30m";
+const RESET_PURPOSE = "password-reset";
+
+type ResetTokenPayload = { user_id: number; tv: number; purpose: string };
+
+/**
+ * Reset tokens use their own secret so they can't be used to log in, and
+ * a login token can't be used to reset a password.
+ */
+const resetSecret = () => `${getJwtSecret()}:${RESET_PURPOSE}`;
+
+/** Where reset links point: WEB_URL, or the first CORS origin. */
+const webUrl = (): string =>
+  (process.env.WEB_URL || process.env.CORS_ORIGIN?.split(",")[0] || "")
+    .trim()
+    .replace(/\/$/, "");
+
+const escapeHtml = (text: string) =>
+  text.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ] as string,
+  );
 
 export type TRegisterData = {
   name: string;
@@ -50,7 +79,10 @@ export class AuthService {
     @InjectRepository(NotificationSettings)
     private notificationSettingsRepo: Repository<NotificationSettings>,
     private jwtService: JwtService,
+    private mailService: MailService,
   ) {}
+
+  private readonly logger = new Logger(AuthService.name);
 
   async register(data: TRegisterData): Promise<Partial<User>> {
     try {
@@ -241,6 +273,82 @@ export class AuthService {
       );
       await manager.query(`DELETE FROM "user" WHERE id = $1`, [user_id]);
     });
+  }
+
+  /**
+   * Emails a reset link if the address has an account. Callers always get the
+   * same answer, and the lookup and sending happen after responding, so this
+   * can't be used to find out which emails are registered.
+   */
+  requestPasswordReset(email: string): void {
+    if (!this.mailService.isConfigured() || !webUrl())
+      throw new ServiceUnavailableException(
+        "Password reset by email isn't available yet",
+      );
+
+    void (async () => {
+      const user = await this.repo
+        .createQueryBuilder("user")
+        .addSelect("user.email")
+        .addSelect("user.token_version")
+        .where({ email })
+        .getOne();
+      if (!user) return;
+
+      const payload: ResetTokenPayload = {
+        user_id: user.id,
+        tv: user.token_version,
+        purpose: RESET_PURPOSE,
+      };
+      const token = this.jwtService.sign(payload, {
+        secret: resetSecret(),
+        expiresIn: RESET_TOKEN_TTL,
+      });
+      const link = `${webUrl()}/auth/reset-password?token=${encodeURIComponent(token)}`;
+      const name = escapeHtml(user.name);
+
+      await this.mailService.send({
+        to: user.email,
+        subject: "Reset your Chronicle password",
+        text: `Hi ${user.name},\n\nSomeone asked to reset the password for your Chronicle account. Open this link within 30 minutes to choose a new one:\n\n${link}\n\nIf it wasn't you, you can ignore this email; your password stays the same.`,
+        html: `<p>Hi ${name},</p><p>Someone asked to reset the password for your Chronicle account. Open this link within 30 minutes to choose a new one:</p><p><a href="${escapeHtml(link)}">Reset my password</a></p><p>If it wasn't you, you can ignore this email; your password stays the same.</p>`,
+      });
+    })().catch((error) =>
+      this.logger.error("Failed to send password reset email", error),
+    );
+  }
+
+  /**
+   * Sets a new password from a reset link. Bumping the token version logs out
+   * every device and makes the link single use.
+   */
+  async resetPassword(token: string, new_password: string): Promise<void> {
+    const invalid = new BadRequestException(
+      "This reset link is invalid or has expired",
+    );
+    let payload: ResetTokenPayload;
+    try {
+      payload = this.jwtService.verify<ResetTokenPayload>(token, {
+        secret: resetSecret(),
+      });
+    } catch {
+      throw invalid;
+    }
+    if (payload.purpose !== RESET_PURPOSE) throw invalid;
+
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(User)
+      .set({
+        password_hash: await bcrypt.hash(new_password, 10),
+        token_version: () => "token_version + 1",
+      })
+      .where("id = :id AND token_version = :tv", {
+        id: payload.user_id,
+        tv: payload.tv,
+      })
+      .execute();
+    if (!result.affected) throw invalid;
   }
 
   private signToken(user_id: number, email: string, tv: number): string {
