@@ -21,6 +21,8 @@ import { Comment } from "./comment.entity";
 import { CreateCommentDto } from "./dto/comment.dto";
 import { UpdateCommentDto } from "./dto/comment.dto";
 import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
+import { OptionalJwtAuthGuard } from "src/auth/optional-jwt-auth.guard";
+import { VerifiedEmailGuard } from "src/auth/verified-email.guard";
 import { CurrentUser } from "src/utils/decorator";
 import type { JwtPayload } from "src/auth/jwt.strategy";
 import { Page, PaginationQueryDto } from "src/utils/pagination";
@@ -34,7 +36,7 @@ export class CommentController {
   @ApiResponse({ status: 201, description: "Comment created successfully" })
   @ApiBearerAuth("access-token")
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, VerifiedEmailGuard)
   createComment(
     @Body() data: CreateCommentDto,
     @CurrentUser() user: JwtPayload,
@@ -61,12 +63,14 @@ export class CommentController {
     status: 200,
     description: "Paginated list of comments on post",
   })
+  @UseGuards(OptionalJwtAuthGuard)
   @Get("/post/:post_id")
   findCommentsByPostId(
     @Param("post_id", ParseIntPipe) post_id: number,
     @Query() paging: PaginationQueryDto,
+    @CurrentUser() viewer: JwtPayload | null,
   ): Promise<Page<Comment>> {
-    return this.service.findByPostId(post_id, paging);
+    return this.service.findByPostId(post_id, paging, viewer?.user_id);
   }
 
   @ApiOperation({ summary: "Get all comments made by a user" })

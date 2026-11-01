@@ -46,6 +46,10 @@ Set `SIGNUP_ENABLED=false` to close sign up: `POST /auth/register` then returns 
 
 Password reset by email (`POST /auth/forgot-password`, then `POST /auth/reset-password`) sends through [Resend](https://resend.com). Set `RESEND_API_KEY`, `MAIL_FROM` (a sender on a domain verified in Resend, e.g. `Chronicle <hello@yourdomain.com>`) and `WEB_URL` (the web app's address, used for the link; defaults to the first `CORS_ORIGIN`). Until they're set, forgot password returns 503 and nothing is sent. Reset links last 30 minutes, work once, and log out every device.
 
+The same email settings turn on sign-up verification: new accounts get a link (valid 3 days) to `POST /auth/verify-email`, and `POST /auth/resend-verification` sends another. Accounts that existed before this were marked verified. Set `REQUIRE_VERIFIED_EMAIL=true` to stop unverified accounts from posting and commenting (403); unset, it's only a reminder in the web app.
+
+Set `ADMIN_USER_IDS` to a comma-separated list of user ids (e.g. `1` or `1,7`) who can review reports at `GET /report` and remove or dismiss them with `PUT /report/:id`.
+
 ## ❤️ Health check
 
 `GET /health` returns 200 `{ "status": "ok" }` when the API can reach its database, and 503 otherwise. CI's boot check uses it, and it can serve as Cloud Run's startup or liveness probe.

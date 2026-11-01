@@ -715,6 +715,295 @@ describe("Chronicle API (e2e)", () => {
         .expect(400));
   });
 
+  describe("people search", () => {
+    it("finds people by name or @handle, most followed first", async () => {
+      const tag = `zq${runId}`;
+      const quiet = await registerAndLogin(`Quiet${tag}`);
+      const known = await registerAndLogin(`Known${tag}`);
+      await api()
+        .post(`/user/follow/${known.id}`)
+        .set("Cookie", quiet.cookie)
+        .expect(201);
+
+      const res = await api().get(`/user?search=${tag}`).expect(200);
+      expect(pageOf(res).data.map((u) => u.id)).toEqual([known.id, quiet.id]);
+      expect(pageOf(res).total).toBe(2);
+
+      const none = await api().get("/user?search=%25%25nobody%25").expect(200);
+      expect(pageOf(none).total).toBe(0);
+    });
+  });
+
+  describe("popular tags and stats", () => {
+    it("counts tags on published posts only", async () => {
+      const tag = `pop${runId}`;
+      await createPost(ann, { tags: `${tag},x${runId}` });
+      await createPost(bob, { tags: ` ${tag.toUpperCase()} ` });
+      await createPost(bob, { tags: tag, is_draft: true });
+
+      const res = await api().get("/post/tags/popular?limit=200").expect(200);
+      const tags = (res.body as { content: { tag: string; count: number }[] })
+        .content;
+      expect(tags.find((t) => t.tag === tag)?.count).toBe(2);
+    });
+
+    it("sums a writer's numbers and counts recent likes", async () => {
+      const writer = await registerAndLogin("Nia");
+      const first = await createPost(writer, { title: "First" });
+      await createPost(writer, { title: "Draft", is_draft: true });
+      await api()
+        .put(`/post/interaction/like/${first}`)
+        .set("Cookie", ann.cookie)
+        .expect(200);
+      await api().put(`/post/counter/view/${first}`).expect(200);
+
+      const res = await api()
+        .get("/post/stats/mine")
+        .set("Cookie", writer.cookie)
+        .expect(200);
+      const stats = (
+        res.body as {
+          content: {
+            totals: Record<string, number>;
+            posts: { id: number; likes_last_30_days: number }[];
+          };
+        }
+      ).content;
+      expect(stats.totals).toMatchObject({ posts: 1, views: 1, likes: 1 });
+      expect(stats.totals.likes_last_30_days).toBe(1);
+      expect(stats.posts.map((p) => p.id)).toEqual([first]);
+
+      await api().get("/post/stats/mine").expect(401);
+    });
+  });
+
+  describe("blocking", () => {
+    it("ends follows, stops comments and hides the blocked person's comments", async () => {
+      const oli = await registerAndLogin("Oli");
+      const pat = await registerAndLogin("Pat");
+      const post = await createPost(oli);
+      await api()
+        .post(`/user/follow/${oli.id}`)
+        .set("Cookie", pat.cookie)
+        .expect(201);
+      const comment = bodyOf(
+        await api()
+          .post("/comment")
+          .set("Cookie", pat.cookie)
+          .send({ post_id: post, content: "before" })
+          .expect(201),
+      ).content.id;
+
+      await api()
+        .post(`/user/block/${pat.id}`)
+        .set("Cookie", oli.cookie)
+        .expect(201);
+
+      const oliUser = bodyOf(
+        await api().get(`/user/${oli.id}`).set("Cookie", oli.cookie),
+      ).content;
+      expect(oliUser.followers).toEqual([]);
+      await api()
+        .post(`/user/follow/${oli.id}`)
+        .set("Cookie", pat.cookie)
+        .expect(403);
+      await api()
+        .post("/comment")
+        .set("Cookie", pat.cookie)
+        .send({ post_id: post, content: "after" })
+        .expect(403);
+
+      const asOli = pageOf(
+        await api().get(`/comment/post/${post}`).set("Cookie", oli.cookie),
+      );
+      expect(asOli.total).toBe(0);
+      const asAnyone = pageOf(await api().get(`/comment/post/${post}`));
+      expect(asAnyone.data.map((c) => c.id)).toEqual([comment]);
+
+      const blocks = pageOf(
+        await api().get("/user/blocks").set("Cookie", oli.cookie),
+      );
+      expect(blocks.data.map((u) => u.id)).toEqual([pat.id]);
+
+      await api()
+        .post(`/user/unblock/${pat.id}`)
+        .set("Cookie", oli.cookie)
+        .expect(201);
+      await api()
+        .post(`/user/follow/${oli.id}`)
+        .set("Cookie", pat.cookie)
+        .expect(201);
+    });
+
+    it("stops notifications from the blocked person", async () => {
+      const ray = await registerAndLogin("Ray");
+      const sue = await registerAndLogin("Sue");
+      const post = await createPost(ray);
+      await api()
+        .post(`/user/block/${sue.id}`)
+        .set("Cookie", ray.cookie)
+        .expect(201);
+      await api()
+        .put(`/post/interaction/like/${post}`)
+        .set("Cookie", sue.cookie)
+        .expect(200);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const notifications = pageOf(
+        await api().get("/notifications").set("Cookie", ray.cookie),
+      );
+      expect(notifications.total).toBe(0);
+    });
+  });
+
+  describe("reports", () => {
+    const env = { ...process.env };
+    afterEach(() => {
+      process.env = { ...env };
+    });
+
+    it("files reports and lets admins remove what was reported", async () => {
+      const tom = await registerAndLogin("Tom");
+      const post = await createPost(bob);
+      await api()
+        .post("/report")
+        .set("Cookie", tom.cookie)
+        .send({ post_id: post, reason: "spam", details: "ads" })
+        .expect(201);
+      // Reporting again while it's open doesn't make a second report.
+      await api()
+        .post("/report")
+        .set("Cookie", tom.cookie)
+        .send({ post_id: post, reason: "spam" })
+        .expect(201);
+      await api()
+        .post("/report")
+        .set("Cookie", tom.cookie)
+        .send({ reason: "spam" })
+        .expect(400);
+      await api()
+        .post("/report")
+        .set("Cookie", tom.cookie)
+        .send({ post_id: post, reason: "boring" })
+        .expect(400);
+
+      await api().get("/report").set("Cookie", tom.cookie).expect(403);
+      process.env.ADMIN_USER_IDS = `999999, ${ann.id}`;
+      const access = bodyOf(
+        await api().get("/report/access").set("Cookie", ann.cookie),
+      ).content;
+      expect(access.is_admin).toBe(true);
+
+      const open = pageOf(
+        await api().get("/report").set("Cookie", ann.cookie).expect(200),
+      ) as unknown as { data: { id: number; post_id: number }[] };
+      const report = open.data.find((r) => r.post_id === post)!;
+      expect(open.data.filter((r) => r.post_id === post)).toHaveLength(1);
+
+      await api()
+        .put(`/report/${report.id}`)
+        .set("Cookie", ann.cookie)
+        .send({ status: "removed" })
+        .expect(200);
+      await api().get(`/post/${post}`).expect(404);
+    });
+
+    it("dismisses a report on a comment and keeps the comment", async () => {
+      const uma = await registerAndLogin("Uma");
+      const post = await createPost(bob);
+      const comment = bodyOf(
+        await api()
+          .post("/comment")
+          .set("Cookie", ann.cookie)
+          .send({ post_id: post, content: "fine" })
+          .expect(201),
+      ).content.id;
+      await api()
+        .post("/report")
+        .set("Cookie", uma.cookie)
+        .send({ comment_id: comment, reason: "harassment" })
+        .expect(201);
+
+      process.env.ADMIN_USER_IDS = String(ann.id);
+      const open = pageOf(
+        await api().get("/report").set("Cookie", ann.cookie),
+      ) as unknown as { data: { id: number; comment_id: number }[] };
+      const report = open.data.find((r) => r.comment_id === comment)!;
+      await api()
+        .put(`/report/${report.id}`)
+        .set("Cookie", ann.cookie)
+        .send({ status: "dismissed" })
+        .expect(200);
+
+      const dismissed = pageOf(
+        await api().get("/report?status=dismissed").set("Cookie", ann.cookie),
+      );
+      expect(dismissed.data.map((r) => r.id)).toContain(report.id);
+      expect(pageOf(await api().get(`/comment/post/${post}`)).total).toBe(1);
+    });
+  });
+
+  describe("email verification", () => {
+    const env = { ...process.env };
+    afterEach(() => {
+      process.env = { ...env };
+      jest.restoreAllMocks();
+    });
+
+    it("emails a link on sign up that verifies the account", async () => {
+      process.env.RESEND_API_KEY = "test-key";
+      process.env.MAIL_FROM = "Chronicle <hello@example.com>";
+      process.env.WEB_URL = "https://chronicle.test";
+      // Stands in for Resend; nothing else in the app calls fetch.
+      const sent: { to: string; text: string }[] = [];
+      jest.spyOn(global, "fetch").mockImplementation((_url, init) => {
+        sent.push(JSON.parse(init!.body as string) as (typeof sent)[number]);
+        return Promise.resolve(new Response("{}", { status: 200 }));
+      });
+
+      const val = await registerAndLogin("Val");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const mail = sent.find((m) => m.to === val.email)!;
+      const token = decodeURIComponent(
+        /verify-email\?token=([^\s]+)/.exec(mail.text)![1],
+      );
+
+      const before = bodyOf(
+        await api().get(`/user/${val.id}`).set("Cookie", val.cookie),
+      ).content;
+      expect(before.email_verified).toBe(false);
+
+      // Posting is open until REQUIRE_VERIFIED_EMAIL is on.
+      await createPost(val);
+      process.env.REQUIRE_VERIFIED_EMAIL = "true";
+      await api()
+        .post("/post")
+        .set("Cookie", val.cookie)
+        .send({ title: "Hi", content: "<p>x</p>" })
+        .expect(403);
+
+      await api()
+        .post("/auth/verify-email")
+        .send({ token: "nope" })
+        .expect(400);
+      await api().post("/auth/verify-email").send({ token }).expect(200);
+      await createPost(val);
+
+      await api()
+        .post("/auth/resend-verification")
+        .set("Cookie", val.cookie)
+        .expect(400);
+    });
+
+    it("says so when email isn't set up", async () => {
+      const wes = await registerAndLogin("Wes");
+      await api()
+        .post("/auth/resend-verification")
+        .set("Cookie", wes.cookie)
+        .expect(503);
+    });
+  });
+
   describe("uploads", () => {
     it("rejects a file whose content isn't the image type it claims", async () => {
       const res = await api()

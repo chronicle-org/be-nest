@@ -27,6 +27,11 @@ export class User {
   @Column({ default: 0, select: false })
   token_version: number;
 
+  // Set when the user opens the link from their sign-up email. Accounts from
+  // before verification existed were marked verified by the migration.
+  @Column({ default: false })
+  email_verified: boolean;
+
   @CreateDateColumn({ type: "timestamp" })
   created_at: Date;
 

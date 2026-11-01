@@ -4,6 +4,7 @@ import { NotificationGateway } from "./notification.gateway";
 import { Notification } from "./notification.entity";
 import { NotificationSettings } from "./notification-settings.entity";
 import { User } from "src/user/user.entity";
+import { UserBlock } from "src/user/user-block.entity";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { NotificationService } from "./notification.service";
 import { NotificationSettingsService } from "./notification-settings.service";
@@ -12,7 +13,12 @@ import { NotificationController } from "./notification.controller";
 @Module({
   imports: [
     ConfigModule,
-    TypeOrmModule.forFeature([Notification, NotificationSettings, User]),
+    TypeOrmModule.forFeature([
+      Notification,
+      NotificationSettings,
+      User,
+      UserBlock,
+    ]),
   ],
   controllers: [NotificationController],
   providers: [

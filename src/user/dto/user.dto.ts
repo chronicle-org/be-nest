@@ -7,6 +7,7 @@ import {
   Min,
 } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
+import { PaginationQueryDto } from "src/utils/pagination";
 
 export class CreateUserDto {
   @ApiProperty({
@@ -106,4 +107,17 @@ export class SuggestionsQueryDto {
   @Min(1)
   @Max(50)
   limit: number = 20;
+}
+
+export class FindUsersQueryDto extends PaginationQueryDto {
+  @ApiProperty({
+    description: "Only people whose name or @handle contains this text",
+    example: "sandi",
+    required: false,
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string;
 }

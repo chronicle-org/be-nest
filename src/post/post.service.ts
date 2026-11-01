@@ -34,6 +34,32 @@ export interface PagedResult {
   total: number;
 }
 
+export type PostStats = Pick<
+  Post,
+  | "id"
+  | "title"
+  | "created_at"
+  | "view_count"
+  | "likes_count"
+  | "comment_count"
+  | "bookmarks_count"
+  | "share_count"
+> & { likes_last_30_days: number };
+
+export type WriterStats = {
+  totals: {
+    posts: number;
+    views: number;
+    likes: number;
+    comments: number;
+    bookmarks: number;
+    shares: number;
+    likes_last_30_days: number;
+    followers: number;
+  };
+  posts: PostStats[];
+};
+
 export type PostListOptions = {
   tag?: string;
   sort?: PostSort;
@@ -310,6 +336,83 @@ export class PostService {
     });
 
     return { data, total };
+  }
+
+  /** The most used tags on published posts, with how many posts use each. */
+  async popularTags(limit: number): Promise<{ tag: string; count: number }[]> {
+    const rows: { tag: string; count: string }[] = await this.repo.query(
+      `SELECT tag, COUNT(*) AS count
+       FROM (
+         SELECT DISTINCT p.id, LOWER(TRIM(t)) AS tag
+         FROM "post" p, unnest(string_to_array(p."tags", ',')) t
+         WHERE p."is_draft" = false
+       ) tagged
+       WHERE tag <> ''
+       GROUP BY tag
+       ORDER BY count DESC, tag ASC
+       LIMIT $1`,
+      [limit],
+    );
+    return rows.map(({ tag, count }) => ({ tag, count: Number(count) }));
+  }
+
+  /**
+   * A writer's numbers: totals across their published posts, and per post
+   * the counters plus likes in the last 30 days, most viewed first.
+   */
+  async stats(user_id: number): Promise<WriterStats> {
+    const posts: Omit<PostStats, "likes_last_30_days">[] = await this.repo.find(
+      {
+        select: {
+          id: true,
+          title: true,
+          created_at: true,
+          view_count: true,
+          likes_count: true,
+          comment_count: true,
+          bookmarks_count: true,
+          share_count: true,
+        },
+        where: { user_id, is_draft: false },
+        order: { view_count: "DESC", id: "DESC" },
+      },
+    );
+
+    const recent: { post_id: number; count: string }[] = posts.length
+      ? await this.repo.query(
+          `SELECT l."post_id", COUNT(*) AS count
+           FROM "post_like" l
+           WHERE l."post_id" = ANY($1::int[])
+             AND l."created_at" >= now() - interval '30 days'
+           GROUP BY l."post_id"`,
+          [posts.map((p) => p.id)],
+        )
+      : [];
+    const recentByPost = new Map(
+      recent.map((r) => [r.post_id, Number(r.count)]),
+    );
+
+    const withRecent = posts.map((post) => ({
+      ...post,
+      likes_last_30_days: recentByPost.get(post.id) ?? 0,
+    }));
+    const sum = (key: keyof PostStats) =>
+      withRecent.reduce((total, post) => total + (post[key] as number), 0);
+    const author = await this.userRepo.findOneBy({ id: user_id });
+
+    return {
+      totals: {
+        posts: posts.length,
+        views: sum("view_count"),
+        likes: sum("likes_count"),
+        comments: sum("comment_count"),
+        bookmarks: sum("bookmarks_count"),
+        shares: sum("share_count"),
+        likes_last_30_days: sum("likes_last_30_days"),
+        followers: author?.followers_count ?? 0,
+      },
+      posts: withRecent,
+    };
   }
 
   /** Published posts from the writers `user_id` follows, newest first. */
